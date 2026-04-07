@@ -18,7 +18,11 @@ include(${SdkRootDirPath}/CMakeLists.txt)
 
 mcux_add_source(
     SOURCES main.c
+            dshot.c
             rc_fsia6B.c
+            dma_driver_mcxn947.c
+            timer_driver_mcxn947.c
+            pwm_driver_mcxn947.c
             uart_driver_mcxn947.c
 )
 

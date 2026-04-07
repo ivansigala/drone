@@ -66,6 +66,12 @@ void BOARD_InitPins(void)
     /* Enables the clock for PORT1: Enables clock */
     CLOCK_EnableClock(kCLOCK_Port1);
 
+    /* Enables the clock for PORT2: Enables clock */
+    CLOCK_EnableClock(kCLOCK_Port2);
+
+    /* Enables the clock for PORT3: Enables clock */
+    CLOCK_EnableClock(kCLOCK_Port3);
+
     /* Debug UART */
     const port_pin_config_t port1_8_pinA1_config = {/* Internal pull-up/down resistor is disabled */
                                                     kPORT_PullDisable,
@@ -154,6 +160,49 @@ void BOARD_InitPins(void)
 
                      /* Input Buffer Enable: Enables. */
                      | PORT_PCR_IBE(PCR_IBE_ibe1));
+
+    /* PWM PINS */             
+    /* PORT2_0 (pin H2) is configured as PWM1_A3 */
+    PORT_SetPinMux(PORT2, 0U, kPORT_MuxAlt5);
+
+    PORT2->PCR[0] = ((PORT2->PCR[0] &
+                      /* Mask bits to zero which are setting */
+                      (~(PORT_PCR_IBE_MASK)))
+
+                     /* Input Buffer Enable: Enables. */
+                     | PORT_PCR_IBE(PCR_IBE_ibe1));
+
+    /* PORT2_2 (pin H3) is configured as PWM1_A2 */
+    PORT_SetPinMux(PORT2, 2U, kPORT_MuxAlt5);
+
+    PORT2->PCR[2] = ((PORT2->PCR[2] &
+                      /* Mask bits to zero which are setting */
+                      (~(PORT_PCR_IBE_MASK)))
+
+                     /* Input Buffer Enable: Enables. */
+                     | PORT_PCR_IBE(PCR_IBE_ibe1));
+
+    /* PORT2_4 (pin K3) is configured as PWM1_A1 */
+    PORT_SetPinMux(PORT2, 4U, kPORT_MuxAlt5);
+
+    PORT2->PCR[4] = ((PORT2->PCR[4] &
+                      /* Mask bits to zero which are setting */
+                      (~(PORT_PCR_IBE_MASK)))
+
+                     /* Input Buffer Enable: Enables. */
+                     | PORT_PCR_IBE(PCR_IBE_ibe1));
+
+    /* PORT2_6 (pin K2) is configured as PWM1_A0 */
+    PORT_SetPinMux(PORT2, 6U, kPORT_MuxAlt5);
+
+    PORT2->PCR[6] = ((PORT2->PCR[6] &
+                      /* Mask bits to zero which are setting */
+                      (~(PORT_PCR_IBE_MASK)))
+
+                     /* Input Buffer Enable: Enables. */
+                     | PORT_PCR_IBE(PCR_IBE_ibe1));
+                     
+
 }
 /***********************************************************************************************************************
  * EOF

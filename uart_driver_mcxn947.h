@@ -37,6 +37,10 @@ typedef struct uart_s {
 	bool enable_dma;
 } uart_ctrl_t;
 
+/* Get Default Config Functions for RC and DShot (ESC) */
+void uart_get_default_rc_config(uart_ctrl_t *ctrl, void* callback_func);
+void uart_get_default_esc_config(uart_ctrl_t *ctrl, void* callback_func);
+
 void uart_init(uart_ctrl_t *ctrl);
 void uart_write(uart_ctrl_t *ctrl, const char* string);
 void uart_read_dma(uart_ctrl_t *ctrl, uint8_t *data, uint32_t size);

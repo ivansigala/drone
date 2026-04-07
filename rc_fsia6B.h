@@ -12,13 +12,8 @@
 /* Especific defines for MCXN947 */
 #ifdef MCXN947
 #include "uart_driver_mcxn947.h"
-#define RC_LPUART_BASEADDR         LPUART1
-#define RC_LPUART_RX_DMA_CHANNEL   1U
-#define RC_LPUART_RX_EDMA_CHANNEL  kDma0RequestMuxLpFlexcomm1Rx
-#define RC_LPUART_DMA_BASEADDR     DMA0
 #endif
 
-#define RC_UART_BAUDRATE 115200U
 #define RC_RING_BUFFER_SIZE 1024
 #define FS_IA6B_FRAME_SIZE 32
 #define FS_IA6B_START_BYTE 0x20

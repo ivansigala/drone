@@ -8,6 +8,21 @@
 #include "uart_driver_mcxn947.h"
 
 /*******************************************************************************
+ * Chip Specific Defines (Moved from RC and DShot headers)
+ ******************************************************************************/
+#define RC_LPUART_BASEADDR         LPUART1
+#define RC_LPUART_RX_DMA_CHANNEL   1U
+#define RC_LPUART_RX_EDMA_CHANNEL  kDma0RequestMuxLpFlexcomm1Rx
+#define RC_LPUART_DMA_BASEADDR     DMA0
+#define RC_UART_BAUDRATE           115200U
+
+#define ESC_LPUART_BASEADDR        LPUART7
+#define ESC_LPUART_RX_DMA_CHANNEL  2U
+#define ESC_LPUART_RX_EDMA_CHANNEL kDma0RequestMuxLpFlexcomm7Rx
+#define ESC_LPUART_DMA_BASEADDR    DMA0
+#define ESC_UART_BAUDRATE          115200U
+
+/*******************************************************************************
  * Global Callback Handles
  ******************************************************************************/
 void (*UART0_HANDLE)(void) = NULL;
@@ -55,6 +70,26 @@ void UART_UserCallback(LPUART_Type *base, lpuart_handle_t *handle, status_t stat
 /*******************************************************************************
  * Driver Functions
  ******************************************************************************/
+
+void uart_get_default_rc_config(uart_ctrl_t *ctrl, void* callback_func) {
+    ctrl->uart_base       = RC_LPUART_BASEADDR;
+    ctrl->dma_base        = RC_LPUART_DMA_BASEADDR;
+    ctrl->dma_rx_channel  = RC_LPUART_RX_DMA_CHANNEL;
+    ctrl->edma_rx_channel = RC_LPUART_RX_EDMA_CHANNEL;
+    ctrl->callback        = (lpuart_edma_transfer_callback_t)callback_func;
+    ctrl->baudrate        = RC_UART_BAUDRATE;
+    ctrl->enable_dma      = true;
+}
+
+void uart_get_default_esc_config(uart_ctrl_t *ctrl, void* callback_func) {
+    ctrl->uart_base       = ESC_LPUART_BASEADDR;
+    ctrl->dma_base        = ESC_LPUART_DMA_BASEADDR;
+    ctrl->dma_rx_channel  = ESC_LPUART_RX_DMA_CHANNEL;
+    ctrl->edma_rx_channel = ESC_LPUART_RX_EDMA_CHANNEL;
+    ctrl->callback        = (lpuart_edma_transfer_callback_t)callback_func;
+    ctrl->baudrate        = ESC_UART_BAUDRATE;
+    ctrl->enable_dma      = true;
+}
 
 void uart_init(uart_ctrl_t *ctrl) {
 

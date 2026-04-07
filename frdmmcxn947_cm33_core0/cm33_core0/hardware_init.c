@@ -25,13 +25,18 @@ void BOARD_InitHardware(void)
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom1Clk, 1u);
 	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM1);
 
-    CLOCK_SetClkDiv(kCLOCK_DivFlexcom3Clk, 1u);
-	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM3);
+    CLOCK_SetClkDiv(kCLOCK_DivFlexcom7Clk, 1u);
+	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM7);
 
     CLOCK_EnableClock(kCLOCK_Dma0);
 
     BOARD_InitPins();
     BOARD_InitBootClocks();
     BOARD_InitDebugConsole();
+
+    /* Enable PWM1 SUB Clockn */
+    SYSCON->PWM1SUBCTL |=
+       (SYSCON_PWM1SUBCTL_CLK0_EN_MASK | SYSCON_PWM1SUBCTL_CLK1_EN_MASK | SYSCON_PWM1SUBCTL_CLK2_EN_MASK | SYSCON_PWM1SUBCTL_CLK3_EN_MASK);
+
 }
 /*${function:end}*/
