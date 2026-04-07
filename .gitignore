@@ -1,0 +1,43 @@
+# CMake and Build Artifacts
+__repo__/
+debug/
+build/
+bin/
+out/
+obj/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Makefile
+*.ninja
+*.cmake
+cmake_install.cmake
+compile_commands.json
+install_manifest.txt
+TargetDirectories.txt
+CMakeConfigureLog.yaml
+pkgRedirects/
+
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
+*.so
+*.lib
+*.dll
+
+# Executables and Binaries
+*.elf
+*.bin
+*.hex
+*.axf
+*.map
+
+# Editor, IDE, and OS specifics
+.vscode/
+.idea/
+*.suo
+*.user
+*.TMP
+*.temp
+.DS_Store
+Thumbs.db
