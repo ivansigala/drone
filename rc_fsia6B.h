@@ -57,14 +57,12 @@ typedef struct
 	RC_Channel_t CH14;
 } fs_ia6b_channels_t;
 
-/* Complete FS-iA6B Frame Structure */
-typedef struct
+typedef struct __attribute__((packed))
 {
-	uint8_t start_byte;                     /* 0x20 */
-	fs_ia6b_channels_t channels;            /* 14 channels × 2 bytes each (bytes 1-28) */
-	uint8_t status_flags;                   /* Byte 29 - Status/Failsafe flags */
-	uint8_t reserved;                       /* Byte 30 - Reserved */
-	uint8_t crc;                            /* Byte 31 - XOR CRC of all previous bytes */
+    uint8_t length;                 /* Byte 0 - Length (always 0x20) */
+    uint8_t command;                /* Byte 1 - Command (0x40 for channels) */
+    fs_ia6b_channels_t channels;    /* Bytes 2-29 - 14 channels × 2 bytes each */
+    uint16_t checksum;              /* Bytes 30-31 - 16-bit Checksum */
 } fs_ia6b_frame_t;
 
 
@@ -84,7 +82,8 @@ typedef enum
 
 rc_status rc_init(void* func_ptr);
 void uart_sync_rx(uart_ctrl_t *ctrl);
+void rc_sync(void);
 rc_status rc_start_dma_rx(uint8_t *buffer, uint32_t length);
-rc_status rc_parse_frame(const uint8_t *buffer, fs_ia6b_channels_t *channels);
+rc_status rc_parse_frame(uint8_t *buffer, fs_ia6b_frame_t *parsed_frame);
 
 #endif /* RC_FSIA6B_H */

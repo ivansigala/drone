@@ -100,11 +100,12 @@ int main(void)
 }
 
 /*!
- * @brief Task responsible for printing of "Hello world." message.
+ * @brief Task responsible for parsing the received RC frame, and printing channel values.
  */
 static void RCParserTask(void *pvParameters)
 {
-    // Start initial DMA reception
+    fs_ia6b_frame_t current_rc_frame;
+
     rxOnGoing = true;
     rc_start_dma_rx(g_rxBuffer, FS_IA6B_FRAME_SIZE);
 
@@ -113,28 +114,26 @@ static void RCParserTask(void *pvParameters)
         /* Wait to be notified by the EDMA ISR */
         if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY) == pdTRUE)
         {
-            /* Data has been received via DMA */
-            PRINTF("Received frame byte 0: %02X\r\n", g_rxBuffer[31]);
+            /* Check if the frame passes CRC and is successfully parsed */
+            if (rc_parse_frame(g_rxBuffer, &current_rc_frame) == kRC_StatusSucces) 
+            {
+                PRINTF("Valid Frame! CH1: %d, CH2: %d, CH3: %d, CH4: %d\r\n", 
+                        current_rc_frame.channels.CH1.u16, 
+                        current_rc_frame.channels.CH2.u16,
+                        current_rc_frame.channels.CH3.u16,
+                        current_rc_frame.channels.CH4.u16);
+            } 
+            else 
+            {
+                PRINTF("Corrupt Frame or CRC mismatch.\r\n");
+                rc_sync();
+            }
 
-            // /* Process your g_rxBuffer data here */
-            fs_ia6b_channels_t extracted_channels;
-            rc_parse_frame((const uint8_t*)g_rxBuffer, &extracted_channels);
-            //if (rc_parse_frame((const uint8_t*)g_rxBuffer, &extracted_channels) == kRC_StatusSucces)
-            // {
-            //     /* Valid frame decoded. Add the struct onto the parsed frames queue. */
-            //     if (xQueueSend(rcChannelQueue, &extracted_channels, portMAX_DELAY) == pdPASS)
-            //     {
-            //         // Frame parsed and enqueued correctly
-            //         PRINTF("Valid Frame: CH1=%d CH2=%d\r\n", 
-            //             extracted_channels.CH1.u16, extracted_channels.CH2.u16);
-            //     }
-            // } else {
-            //     PRINTF("Invalid/bad CRC frame ignored...\r\n");
-            // }
-
-            /* Restart DMA reception for the next frame */
+            /* Clean up and restart DMA reception for the next frame */
             rxBufferEmpty = true;
             rxOnGoing = true;
+            
+            LPUART_ClearStatusFlags(RC_LPUART_BASEADDR, kLPUART_RxOverrunFlag | kLPUART_NoiseErrorFlag | kLPUART_FramingErrorFlag | kLPUART_ParityErrorFlag);
             rc_start_dma_rx(g_rxBuffer, FS_IA6B_FRAME_SIZE);
         }
     }
