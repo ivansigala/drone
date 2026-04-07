@@ -83,7 +83,8 @@ typedef enum
 /* Function Prototypes */
 
 rc_status rc_init(void* func_ptr);
+void uart_sync_rx(uart_ctrl_t *ctrl);
 rc_status rc_start_dma_rx(uint8_t *buffer, uint32_t length);
-// rc_status rc_parse_frame(fs_ia6b_frame_t *frame);
+rc_status rc_parse_frame(const uint8_t *buffer, fs_ia6b_channels_t *channels);
 
 #endif /* RC_FSIA6B_H */

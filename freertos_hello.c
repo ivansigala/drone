@@ -25,7 +25,7 @@
  * Definitions
  ******************************************************************************/
 /* Task priorities. */
-#define RC_task_PRIORITY 6
+#define RC_task_PRIORITY 4
 /*******************************************************************************
  * Prototypes
  ******************************************************************************/
@@ -42,6 +42,9 @@ volatile bool rxOnGoing                                              = false;
 
 /* Task handle for notifications */
 TaskHandle_t rcParserTaskHandle = NULL;
+
+/* Queue for successfully parsed channels */
+QueueHandle_t rcChannelQueue = NULL;
 
 /*******************************************************************************
  * Code
@@ -71,7 +74,18 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitHardware();
 
+    /* FreeRTOS interrupt priority fix */
+    NVIC_SetPriority(EDMA_0_CH1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 2);
+
     rc_init(RC_Callback);
+
+    /* Create Queue to hold the parsed channels data (buffer size of 5 frames) */
+    rcChannelQueue = xQueueCreate(5, sizeof(fs_ia6b_channels_t));
+    if (rcChannelQueue == NULL)
+    {
+        PRINTF("Queue creation failed!.\r\n");
+        while (1);
+    }
 
     if (xTaskCreate(RCParserTask, "rc_task", configMINIMAL_STACK_SIZE + 100, NULL, RC_task_PRIORITY, &rcParserTaskHandle) !=
         pdPASS)
@@ -100,10 +114,23 @@ static void RCParserTask(void *pvParameters)
         if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY) == pdTRUE)
         {
             /* Data has been received via DMA */
-            PRINTF("Received frame byte 0: %02X\r\n", g_rxBuffer[0]);
+            PRINTF("Received frame byte 0: %02X\r\n", g_rxBuffer[31]);
 
-            /* Process your g_rxBuffer data here */
-            // rc_parse_frame(...)
+            // /* Process your g_rxBuffer data here */
+            fs_ia6b_channels_t extracted_channels;
+            rc_parse_frame((const uint8_t*)g_rxBuffer, &extracted_channels);
+            //if (rc_parse_frame((const uint8_t*)g_rxBuffer, &extracted_channels) == kRC_StatusSucces)
+            // {
+            //     /* Valid frame decoded. Add the struct onto the parsed frames queue. */
+            //     if (xQueueSend(rcChannelQueue, &extracted_channels, portMAX_DELAY) == pdPASS)
+            //     {
+            //         // Frame parsed and enqueued correctly
+            //         PRINTF("Valid Frame: CH1=%d CH2=%d\r\n", 
+            //             extracted_channels.CH1.u16, extracted_channels.CH2.u16);
+            //     }
+            // } else {
+            //     PRINTF("Invalid/bad CRC frame ignored...\r\n");
+            // }
 
             /* Restart DMA reception for the next frame */
             rxBufferEmpty = true;
