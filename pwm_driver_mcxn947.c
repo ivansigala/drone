@@ -145,8 +145,8 @@ status_t pwm_init(pwm_ctrl_t *pwm){
 	/* Set the load okay bit for all submodules to load registers from their buffer */
 	PWM_SetPwmLdok(pwm->pwm_base, pwm->submodule_ctrl , true);
 
-	/* Start the PWM generation from Submodules 0, 1 and 2 */
-	PWM_StartTimer(pwm->pwm_base, pwm->submodule_ctrl);
+	/* Start the PWM generation from Submodules */
+	//PWM_StartTimer(pwm->pwm_base, pwm->submodule_ctrl);
 
 	if (pwm->enable_dma) {
         // Enable DMA write requests for the VAL registers
@@ -204,6 +204,13 @@ void pwm_set_ldok(pwm_ctrl_t *pwm)
 void pwm_set_ldok_mask(PWM_Type *base, uint8_t mask)
 {
     PWM_SetPwmLdok(base, mask, true);
+}
+
+void pwm_init_timers(PWM_Type *base) {
+    
+    PWM_StartTimer(base, kPWM_Control_Module_0 | kPWM_Control_Module_1 | kPWM_Control_Module_2 | kPWM_Control_Module_3);
+
+
 }
 
 

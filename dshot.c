@@ -62,6 +62,14 @@ status_t dshot_init(dshotSystem_t *sys, void* telemetry_callback_ptr){
     dshot_motor_init(&(sys->motor2));
     dshot_motor_init(&(sys->motor3));
 
+    __disable_irq();
+    PWM_StartTimer(sys->motor0.pwm.pwm_base, 
+                   sys->motor0.pwm.submodule_ctrl | 
+                   sys->motor1.pwm.submodule_ctrl | 
+                   sys->motor2.pwm.submodule_ctrl | 
+                   sys->motor3.pwm.submodule_ctrl);
+    __enable_irq();
+
     return kStatus_Success;
 }
 

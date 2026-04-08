@@ -95,10 +95,12 @@ void dma_transfer_submit_channels(uint32_t *channels, uint32_t *srcAddr, uint32_
                             totalBytes,     // Total bytes for the frame
                             kEDMA_MemoryToPeripheral);
         EDMA_SubmitTransfer(&s_dma_handles[channels[i]], &transferConfig);
-        EDMA_StartTransfer(&s_dma_handles[channels[i]]);
     }
 
+    __disable_irq();
     for (uint32_t i = 0; i < numChannels; i++) {
         EDMA_StartTransfer(&s_dma_handles[channels[i]]);
     }
+    __enable_irq();
+    
 }

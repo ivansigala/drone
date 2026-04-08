@@ -45,5 +45,6 @@ status_t PWM_DRV_Init3PhPwm(pwm_ctrl_t *pwm);
 void PWM_SetPwmDutyCycle(pwm_ctrl_t *pwm, uint16_t dutyCycle);
 void pwm_set_ldok(pwm_ctrl_t *pwm);
 void pwm_set_ldok_mask(PWM_Type *base, uint8_t mask);
+void pwm_init_timers(PWM_Type *base);
 
 #endif /* PWM_DRIVER_MCXN947_H_ */
