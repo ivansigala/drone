@@ -12,6 +12,7 @@
 
 // Buffers for 4 motors (Must be non-cacheable for DMA)
 AT_NONCACHEABLE_SECTION(uint16_t dma_buf[DSHOT_DMA_BUFFER_SIZE]);
+AT_NONCACHEABLE_SECTION(uint16_t dma_buf_all[MAX_SUPPORTED_MOTORS][DSHOT_DMA_BUFFER_SIZE]);
 static uart_ctrl_t esc_ctrl;
 
 /*******************************************************************************
@@ -127,11 +128,12 @@ uint16_t dshot_prepare_packet(uint16_t throttle_u16, bool request_telemetry_b) {
 
 void dshot_send_frame(dshotMotor_t *motor) {
     
-    uint16_t packet = dshot_prepare_packet(motor->dshot_control.throttle_u16, motor->dshot_control.requestTelemetry_b);
+    uint16_t packet_u16 = dshot_prepare_packet(motor->dshot_control.throttle_u16, motor->dshot_control.requestTelemetry_b);
+    uint32_t destAddr_u16 = (uint32_t)&motor->pwm.pwm_base->SM[motor->pwm.submodule].VAL3;
 
     // 1. Fill the 16 bits
     for (int i = 0; i < 16; i++) {
-        dma_buf[i] = (packet & (0x8000 >> i)) ? DSHOT_600_BIT_1 : DSHOT_600_BIT_0;
+        dma_buf[i] = (packet_u16 & (0x8000 >> i)) ? DSHOT_600_BIT_1 : DSHOT_600_BIT_0;
     }
     
     // 2. Add the crucial DShot reset period (duty cycle = 0)
@@ -139,15 +141,58 @@ void dshot_send_frame(dshotMotor_t *motor) {
     dma_buf[17] = 0;
 
     // Target the specific VAL register
-    uint32_t destAddr = (uint32_t)&motor->pwm.pwm_base->SM[motor->pwm.submodule].VAL3;
 
     dma_transfer_submit(motor->dma_id,
                             (uint32_t)dma_buf,
-                            destAddr,
+                            destAddr_u16,
                             sizeof(uint16_t),
                             DSHOT_DMA_BUFFER_SIZE * sizeof(uint16_t));
 
     pwm_set_ldok(&motor->pwm);
+
+}
+
+
+
+void dshot_send_frame_all(dshotSystem_t *sys) {
+    
+    uint8_t ldok_mask = 0;
+    uint32_t destAddr_u16[MAX_SUPPORTED_MOTORS] = {0};
+    uint16_t packets[MAX_SUPPORTED_MOTORS];
+    uint32_t dma_buf_list[MAX_SUPPORTED_MOTORS] = {(uint32_t)dma_buf_all[0], (uint32_t)dma_buf_all[1], (uint32_t)dma_buf_all[2], (uint32_t)dma_buf_all[3]};
+    dshotMotor_t  *motors[MAX_SUPPORTED_MOTORS] = { &sys->motor0, &sys->motor1, &sys->motor2, &sys->motor3 };
+    uint32_t dma_channels[MAX_SUPPORTED_MOTORS] = {motors[0]->dma_id, motors[1]->dma_id, motors[2]->dma_id, motors[3]->dma_id};
+
+    for(int i = 0; i < MAX_SUPPORTED_MOTORS; i++){
+        packets[i] = dshot_prepare_packet(motors[i]->dshot_control.throttle_u16, motors[i]->dshot_control.requestTelemetry_b);
+        for (int bit = 0; bit < 16; bit++) {
+            dma_buf_all[i][bit] = (packets[i] & (0x8000 >> bit)) ? DSHOT_600_BIT_1 : DSHOT_600_BIT_0;
+        }
+        dma_buf_all[i][16] = 0;
+        dma_buf_all[i][17] = 0;
+    }
+
+
+    for(int i = 0; i < MAX_SUPPORTED_MOTORS; i++){
+        destAddr_u16[i] = (uint32_t)&motors[i]->pwm.pwm_base->SM[motors[i]->pwm.submodule].VAL3;
+    }
+
+    for(int i = 0; i < MAX_SUPPORTED_MOTORS; i++){
+        ldok_mask |= (1U << motors[i]->pwm.submodule);
+    }
+
+    // Call the DMA channels
+    dma_transfer_submit_channels(dma_channels,
+                                dma_buf_list,
+                                destAddr_u16,
+                                sizeof(uint16_t),
+                                DSHOT_DMA_BUFFER_SIZE * sizeof(uint16_t),
+                                MAX_SUPPORTED_MOTORS);
+    
+    
+    pwm_set_ldok_mask(motors[0]->pwm.pwm_base, ldok_mask);
+    
+    
 }
 
 /*******************************************************************************

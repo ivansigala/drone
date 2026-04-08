@@ -196,3 +196,15 @@ void pwm_set_ldok(pwm_ctrl_t *pwm)
     PWM_SetPwmLdok(pwm->pwm_base, (1U << pwm->submodule), true);
 }
 
+/*!
+ * @brief Activa el bit LDOK (Load Okay) para una máscara de submódulos.
+ * @param base Puntero al periférico PWM.
+ * @param mask Máscara de los submódulos a activar.
+ */
+void pwm_set_ldok_mask(PWM_Type *base, uint8_t mask)
+{
+    PWM_SetPwmLdok(base, mask, true);
+}
+
+
+

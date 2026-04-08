@@ -26,6 +26,7 @@ void dma_init_channel(dma_ctrl_t *config);
 
 void dma_transfer_submit(uint32_t channel, uint32_t srcAddr, uint32_t destAddr, uint32_t itemSize, uint32_t totalBytes);
 
+void dma_transfer_submit_channels(uint32_t *channels, uint32_t *srcAddr, uint32_t *destAddr, uint32_t itemSize, uint32_t totalBytes, uint32_t numChannels);
 
 
 #endif /* DMA_DRIVER_MCXN947_H_ */

@@ -176,6 +176,11 @@ uint16_t dshot_prepare_packet(uint16_t throttle, bool request_telemetry);
  */
 void dshot_send_frame(dshotMotor_t *motor);
 
+/*!
+ * @brief Sends DShot frames to all motors.
+ * @param sys Pointer to the DShot system structure.
+ */
+void dshot_send_frame_all(dshotSystem_t *sys);
 
 /*!
  * @brief Updates the CRC8 value with a new byte.

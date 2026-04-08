@@ -26,7 +26,9 @@
 /* Task priorities. */
 #define RC_task_PRIORITY 4
 #define ESC_task_PRIORITY 4
-#define motor_task_PRIORITY 4
+#define MOTOR_task_PRIORITY 4
+#define CONTROL_task_PRIORITY 4
+#define SENSOR_task_PRIORITY 4
 
 /*******************************************************************************
  * Prototypes
@@ -34,7 +36,8 @@
 static void RCParserTask(void *pvParameters);
 static void ESCTelemetryTask(void *pvParameters);
 static void DSHOTGeneratorTask(void *pvParameters);
-static void SensorTask(void *pvParameters);
+// static void ControlLoopTask(void *pvParameters);
+// static void SensorTask(void *pvParameters);
 
 void RC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t status, void *userData);
 void ESC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t status, void *userData);
@@ -150,13 +153,29 @@ int main(void)
             ;
     }
 
-    if (xTaskCreate(DSHOTGeneratorTask , "motor_task", configMINIMAL_STACK_SIZE + 50, &esc, motor_task_PRIORITY, &dshotGeneratorTaskHandle) !=
+    if (xTaskCreate(DSHOTGeneratorTask , "motor_task", configMINIMAL_STACK_SIZE + 50, &esc, MOTOR_task_PRIORITY, &dshotGeneratorTaskHandle) !=
         pdPASS)
     {
         PRINTF("Task creation failed!.\r\n");
         while (1)
             ;
     }
+
+    // if (xTaskCreate(ControlLoopTask , "control_task", configMINIMAL_STACK_SIZE + 50, &esc, CONTROL_task_PRIORITY, &escParserTaskHandle) !=
+    //     pdPASS)
+    // {
+    //     PRINTF("Task creation failed!.\r\n");
+    //     while (1)
+    //         ;
+    // }
+
+    // if (xTaskCreate(SensorTask , "sensor_task", configMINIMAL_STACK_SIZE + 50, &esc, SENSOR_task_PRIORITY, &dshotGeneratorTaskHandle) !=
+    //     pdPASS)
+    // {
+    //     PRINTF("Task creation failed!.\r\n");
+    //     while (1)
+    //         ;
+    // }
 
     
 
@@ -166,6 +185,25 @@ int main(void)
     for (;;)
         ;
 }
+
+// /*!
+//  * @brief Task responsible for calculating the control aoutputs based on the RC input and ESC telemetry.
+//  */
+// static void ControlLoopTask(void *pvParameters){
+
+//     vTaskSuspend(NULL);
+    
+// }
+
+
+// /*!
+//  * @brief Task responsible for reading sensors the IMU and barometer.
+//  */
+// static void SensorTask(void *pvParameters){
+    
+//     vTaskSuspend(NULL);
+
+// }
 
 
 /*!
@@ -186,14 +224,16 @@ static void DSHOTGeneratorTask(void *pvParameters)
             /* Track which motor requested telemetry so ESC task can store it correctly. */
             (void)xQueueSendToBack(escTelemetryMotorIdQueue, &motor_id, 0);
 
+            __disable_irq();
             switch (motor_id)
             {
             case 0:
                 esc->motor0.dshot_control.requestTelemetry_b = true;
-                dshot_send_frame(&(esc->motor0));
-                dshot_send_frame(&(esc->motor1));
-                dshot_send_frame(&(esc->motor2));
-                dshot_send_frame(&(esc->motor3));
+                dshot_send_frame_all(esc);
+                // dshot_send_frame(&(esc->motor0));
+                // dshot_send_frame(&(esc->motor1));
+                // dshot_send_frame(&(esc->motor2));
+                // dshot_send_frame(&(esc->motor3));
                 esc->motor0.dshot_control.requestTelemetry_b = false;
                 break;
             case 1:
@@ -217,6 +257,7 @@ static void DSHOTGeneratorTask(void *pvParameters)
                 break;
             }
 
+            __enable_irq();
             motor_id = (motor_id + 1) % MAX_SUPPORTED_MOTORS;
 
         }
@@ -225,7 +266,7 @@ static void DSHOTGeneratorTask(void *pvParameters)
 }
 
 /*!
- * @brief Task responsible for parsing the received RC frame, and printing channel values.
+ * @brief Task responsible for parsing the received RC frame.
  */
 static void RCParserTask(void *pvParameters)
 {
@@ -241,16 +282,13 @@ static void RCParserTask(void *pvParameters)
             /* Check if the frame passes CRC and is successfully parsed */
             if (rc_parse_frame(g_rc_rxBuffer, &current_rc_frame) == kRC_StatusSucces) 
             {
-                // PRINTF("Valid Frame! CH1: %d, CH2: %d, CH3: %d, CH4: %d\r\n", 
-                //         current_rc_frame.channels.CH1.u16, 
-                //         current_rc_frame.channels.CH2.u16,
-                //         current_rc_frame.channels.CH3.u16,
-                //         current_rc_frame.channels.CH4.u16);
+                PRINTF("%d\r\n", 
+                        current_rc_frame.channels.CH1.u16);
             } 
             else 
             {
                 //PRINTF("Corrupt Frame or CRC mismatch.\r\n");
-                //rc_sync();
+                rc_sync();
             }
 
             /* Clean up and restart DMA reception for the next frame */

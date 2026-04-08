@@ -81,3 +81,24 @@ void dma_transfer_submit(uint32_t channel, uint32_t srcAddr, uint32_t destAddr, 
     EDMA_SubmitTransfer(&s_dma_handles[channel], &transferConfig);
     EDMA_StartTransfer(&s_dma_handles[channel]);
 }
+
+
+void dma_transfer_submit_channels(uint32_t *channels, uint32_t *srcAddr, uint32_t *destAddr, uint32_t itemSize, uint32_t totalBytes, uint32_t numChannels) {
+
+	edma_transfer_config_t transferConfig;
+
+    for(int i = 0; i < numChannels; i++) {
+        EDMA_PrepareTransfer(&transferConfig,
+                            (void *)srcAddr[i], itemSize,
+                            (void *)destAddr[i], itemSize,
+                            itemSize,       // Bytes per request
+                            totalBytes,     // Total bytes for the frame
+                            kEDMA_MemoryToPeripheral);
+        EDMA_SubmitTransfer(&s_dma_handles[channels[i]], &transferConfig);
+        EDMA_StartTransfer(&s_dma_handles[channels[i]]);
+    }
+
+    for (uint32_t i = 0; i < numChannels; i++) {
+        EDMA_StartTransfer(&s_dma_handles[channels[i]]);
+    }
+}

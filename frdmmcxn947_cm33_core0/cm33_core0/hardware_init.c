@@ -22,6 +22,10 @@ void BOARD_InitHardware(void)
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom4Clk, 1u);
     CLOCK_AttachClk(BOARD_DEBUG_UART_CLK_ATTACH);
 
+    /* attach PLL0 to FLEXIO */
+    CLOCK_SetClkDiv(kCLOCK_DivFlexioClk, 1u);
+    CLOCK_AttachClk(kPLL0_to_FLEXIO);
+
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom1Clk, 1u);
 	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM1);
 

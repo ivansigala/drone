@@ -71,6 +71,9 @@ void BOARD_InitPins(void)
 
     /* Enables the clock for PORT3: Enables clock */
     CLOCK_EnableClock(kCLOCK_Port3);
+    
+    /* Enables the clock for PORT4: Enables clock */
+    CLOCK_EnableClock(kCLOCK_Port4);
 
     /* Debug UART */
     const port_pin_config_t port1_8_pinA1_config = {/* Internal pull-up/down resistor is disabled */

@@ -20,7 +20,7 @@ rc_status rc_init(void* func_ptr){
 
     uart_init(&rc_ctrl);
 
-    //uart_sync_rx(&rc_ctrl);
+    uart_sync_rx(&rc_ctrl);
 
     return kRC_StatusSucces;
 
