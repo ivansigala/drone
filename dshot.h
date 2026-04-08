@@ -95,6 +95,7 @@ typedef struct dshotMotor_s {
 	dshotControl_t   dshot_control;
 	dma_ctrl_t       dma;
 	pwm_ctrl_t       pwm;
+	uint8_t		     dma_id;
 	uint8_t          motor_id;
 
 } dshotMotor_t;

@@ -31,6 +31,12 @@ status_t dshot_init(dshotSystem_t *sys, void* telemetry_callback_ptr){
     }
 
 #ifdef MCXN947
+
+    NVIC_SetPriority(EDMA_0_CH3_IRQn, 2);
+    NVIC_SetPriority(EDMA_0_CH4_IRQn, 2);
+    NVIC_SetPriority(EDMA_0_CH5_IRQn, 2);
+    NVIC_SetPriority(EDMA_0_CH6_IRQn, 2);
+
     uart_get_default_esc_config(&(sys->telemetry_uart), telemetry_callback_ptr);
     
     pwm_get_default_dshot_config(&(sys->motor0.pwm), 0);
@@ -39,9 +45,13 @@ status_t dshot_init(dshotSystem_t *sys, void* telemetry_callback_ptr){
     pwm_get_default_dshot_config(&(sys->motor3.pwm), 3);
 
     dma_get_default_dshot_config(&(sys->motor0.dma), 0);
+    sys->motor0.dma_id= 3;
     dma_get_default_dshot_config(&(sys->motor1.dma), 1);
+    sys->motor1.dma_id = 4;
     dma_get_default_dshot_config(&(sys->motor2.dma), 2);
+    sys->motor2.dma_id = 5;
     dma_get_default_dshot_config(&(sys->motor3.dma), 3);
+    sys->motor3.dma_id = 6;
 #endif
 
     dshot_telemetry_init(&(sys->telemetry_uart));
@@ -63,7 +73,7 @@ status_t dshot_motor_init(dshotMotor_t *motor) {
     }
 
     // 2. Initialize the DMA cahnnel
-    dshot_dma_init(&motor->dma);
+    dshot_dma_init(&(motor->dma));
 
     return kStatus_Success;
 }
@@ -131,7 +141,7 @@ void dshot_send_frame(dshotMotor_t *motor) {
     // Target the specific VAL register
     uint32_t destAddr = (uint32_t)&motor->pwm.pwm_base->SM[motor->pwm.submodule].VAL3;
 
-    dma_transfer_submit(motor->motor_id,
+    dma_transfer_submit(motor->dma_id,
                             (uint32_t)dma_buf,
                             destAddr,
                             sizeof(uint16_t),
@@ -141,7 +151,7 @@ void dshot_send_frame(dshotMotor_t *motor) {
 }
 
 /*******************************************************************************
- * Tlemetry
+ * Telemetry
  ******************************************************************************/
 
 void dshot_telemetry_init(uart_ctrl_t* uart_config_ptr) {

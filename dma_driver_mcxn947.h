@@ -11,7 +11,7 @@
 
 #include "fsl_edma.h"
 
-#define MAX_DMA_CHANNELS 8
+#define MAX_DMA_CHANNELS 16
 
 typedef struct dma_s {
 	DMA_Type  *dma_base;

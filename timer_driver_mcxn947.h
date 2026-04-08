@@ -18,7 +18,6 @@ typedef struct timer_s {
     LPTMR_Type *lptmr_base;
     uint32_t frequency;
     uint32_t timer_id;
-    void (*callback)(void* args);
 } timer_ctrl_t;
 
 status_t timer_init(timer_ctrl_t *timer);

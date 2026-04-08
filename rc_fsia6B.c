@@ -13,12 +13,14 @@ static uart_ctrl_t rc_ctrl;
 rc_status rc_init(void* func_ptr){
 
 #ifdef MCXN947
+    NVIC_SetPriority(EDMA_0_CH1_IRQn, 4);
+    NVIC_SetPriority(EDMA_0_CH2_IRQn, 4);
     uart_get_default_rc_config(&rc_ctrl, func_ptr);
 #endif
 
     uart_init(&rc_ctrl);
 
-    uart_sync_rx(&rc_ctrl);
+    //uart_sync_rx(&rc_ctrl);
 
     return kRC_StatusSucces;
 

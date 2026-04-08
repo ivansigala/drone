@@ -34,6 +34,8 @@
 static void RCParserTask(void *pvParameters);
 static void ESCTelemetryTask(void *pvParameters);
 static void DSHOTGeneratorTask(void *pvParameters);
+static void SensorTask(void *pvParameters);
+
 void RC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t status, void *userData);
 void ESC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t status, void *userData);
 
@@ -54,6 +56,9 @@ TaskHandle_t dshotGeneratorTaskHandle = NULL;
 QueueHandle_t rcChannelQueue = NULL;
 QueueHandle_t escChannelQueue = NULL;
 QueueHandle_t escTelemetryMotorIdQueue = NULL;
+
+/* ESC Handle */
+dshotSystem_t esc;
 
 /*******************************************************************************
  * Code
@@ -85,7 +90,7 @@ void ESC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t stat
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void timer_0_callback(void *args){
+void timer_0_callback(void *args) {
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
@@ -101,28 +106,23 @@ void timer_0_callback(void *args){
  */
 int main(void)
 {
-    dshotSystem_t esc;
     timer_ctrl_t timer_0 ={
         .timer_id = 0,
-        .frequency = 800, // 
-        .callback = timer_0_callback 
+        .frequency = 800
     };
 
     /* Init board hardware. */
     BOARD_InitHardware();
 
     /* FreeRTOS interrupt priority fix */
-    NVIC_SetPriority(EDMA_0_CH1_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 2);
-    NVIC_SetPriority(EDMA_0_CH2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 2);
-    NVIC_SetPriority(EDMA_0_CH3_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 2);
-    NVIC_SetPriority(EDMA_0_CH4_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 2);
-    NVIC_SetPriority(EDMA_0_CH5_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 2);
-    NVIC_SetPriority(EDMA_0_CH6_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 2);
-    NVIC_SetPriority(LPTMR0_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 2);
+    NVIC_SetPriority(LPTMR0_IRQn, 5);
 
     rc_init(RC_Callback);
+    
     dshot_init(&esc, ESC_Callback);
+
     timer_init(&timer_0);
+    timer_attach_callback(&timer_0, timer_0_callback);
 
     /* Create Queue to hold the parsed channels data (buffer size of 5 frames) */
     rcChannelQueue = xQueueCreate(5, sizeof(fs_ia6b_channels_t));
@@ -158,6 +158,7 @@ int main(void)
             ;
     }
 
+    
 
     timer_start(&timer_0);
 
@@ -190,6 +191,9 @@ static void DSHOTGeneratorTask(void *pvParameters)
             case 0:
                 esc->motor0.dshot_control.requestTelemetry_b = true;
                 dshot_send_frame(&(esc->motor0));
+                dshot_send_frame(&(esc->motor1));
+                dshot_send_frame(&(esc->motor2));
+                dshot_send_frame(&(esc->motor3));
                 esc->motor0.dshot_control.requestTelemetry_b = false;
                 break;
             case 1:
@@ -246,7 +250,7 @@ static void RCParserTask(void *pvParameters)
             else 
             {
                 //PRINTF("Corrupt Frame or CRC mismatch.\r\n");
-                rc_sync();
+                //rc_sync();
             }
 
             /* Clean up and restart DMA reception for the next frame */
