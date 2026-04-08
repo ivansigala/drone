@@ -149,7 +149,7 @@ void dshot_send_frame(dshotMotor_t *motor) {
     dma_buf[17] = 0;
 
     // Target the specific VAL register
-
+    __disable_irq();
     dma_transfer_submit(motor->dma_id,
                             (uint32_t)dma_buf,
                             destAddr_u16,
@@ -157,7 +157,7 @@ void dshot_send_frame(dshotMotor_t *motor) {
                             DSHOT_DMA_BUFFER_SIZE * sizeof(uint16_t));
 
     pwm_set_ldok(&motor->pwm);
-
+    __enable_irq();
 }
 
 

@@ -224,7 +224,6 @@ static void DSHOTGeneratorTask(void *pvParameters)
             /* Track which motor requested telemetry so ESC task can store it correctly. */
             (void)xQueueSendToBack(escTelemetryMotorIdQueue, &motor_id, 0);
 
-            __disable_irq();
             switch (motor_id)
             {
             case 0:
@@ -256,8 +255,6 @@ static void DSHOTGeneratorTask(void *pvParameters)
                 PRINTF("Invalid motor index in DSHOTGeneratorTask.\r\n");
                 break;
             }
-
-            __enable_irq();
             motor_id = (motor_id + 1) % MAX_SUPPORTED_MOTORS;
 
         }
@@ -288,7 +285,7 @@ static void RCParserTask(void *pvParameters)
             else 
             {
                 //PRINTF("Corrupt Frame or CRC mismatch.\r\n");
-                rc_sync();
+                //rc_sync();
             }
 
             /* Clean up and restart DMA reception for the next frame */
