@@ -35,6 +35,7 @@ processor_version: 0.14.14
 void BOARD_InitBootPins(void)
 {
     BOARD_InitPins();
+    LPSPI3_InitPins();
 }
 
 /* clang-format off */
@@ -108,6 +109,110 @@ void BOARD_InitPins(void)
                                                     kPORT_UnlockRegister};
     /* PORT1_9 (pin B1) is configured as FC4_P1 */
     PORT_SetPinConfig(PORT1, 9U, &port1_9_pinB1_config);
+}
+
+void LPSPI3_InitPins(void)
+{
+    /* Enables the clock for PORT1: Enables clock */
+    CLOCK_EnableClock(kCLOCK_Port1);
+
+    /* SDA */
+    const port_pin_config_t port1_12_config = {/* Internal pull-up resistor is enabled */
+                                                     kPORT_PullUp,
+                                                     /* Low internal pull resistor value is selected. */
+                                                     kPORT_LowPullResistor,
+                                                     /* Slow slew rate is configured */
+                                                     kPORT_SlowSlewRate,
+                                                     /* Passive input filter is disabled */
+                                                     kPORT_PassiveFilterDisable,
+                                                     /* Open drain output is disabled */
+                                                     kPORT_OpenDrainDisable,
+                                                     /* Low drive strength is configured */
+                                                     kPORT_LowDriveStrength,
+                                                     /* Pin is configured as FC3_P0 */
+                                                     kPORT_MuxAlt3,
+                                                     /* Digital input enabled */
+                                                     kPORT_InputBufferEnable,
+                                                     /* Digital input is not inverted */
+                                                     kPORT_InputNormal,
+                                                     /* Pin Control Register fields [15:0] are not locked */
+                                                     kPORT_UnlockRegister};
+    /* PORT1_12 is configured as F3_P0 */
+    PORT_SetPinConfig(PORT1, 12U, &port1_12_config);
+
+    /* SCL */
+    const port_pin_config_t port1_13_config = {/* Internal pull-up resistor is enabled */
+                                                     kPORT_PullUp,
+                                                     /* Low internal pull resistor value is selected. */
+                                                     kPORT_LowPullResistor,
+                                                     /* Slow slew rate is configured */
+                                                     kPORT_SlowSlewRate,
+                                                     /* Passive input filter is disabled */
+                                                     kPORT_PassiveFilterDisable,
+                                                     /* Open drain output is disabled */
+                                                     kPORT_OpenDrainDisable,
+                                                     /* Low drive strength is configured */
+                                                     kPORT_LowDriveStrength,
+                                                     /* Pin is configured as FC3_P1 */
+                                                     kPORT_MuxAlt3,
+                                                     /* Digital input enabled */
+                                                     kPORT_InputBufferEnable,
+                                                     /* Digital input is not inverted */
+                                                     kPORT_InputNormal,
+                                                     /* Pin Control Register fields [15:0] are not locked */
+                                                     kPORT_UnlockRegister};
+    /* PORT1_13 is configured as F3_P1 */
+    PORT_SetPinConfig(PORT1, 13U, &port1_13_config);
+
+    /* SDI */
+    const port_pin_config_t port1_14_config = {/* Internal pull-up resistor is enabled */
+                                                     kPORT_PullUp,
+                                                     /* Low internal pull resistor value is selected. */
+                                                     kPORT_LowPullResistor,
+                                                     /* Slow slew rate is configured */
+                                                     kPORT_SlowSlewRate,
+                                                     /* Passive input filter is disabled */
+                                                     kPORT_PassiveFilterDisable,
+                                                     /* Open drain output is disabled */
+                                                     kPORT_OpenDrainDisable,
+                                                     /* Low drive strength is configured */
+                                                     kPORT_LowDriveStrength,
+                                                     /* Pin is configured as FC3_P2 */
+                                                     kPORT_MuxAlt3,
+                                                     /* Digital input enabled */
+                                                     kPORT_InputBufferEnable,
+                                                     /* Digital input is not inverted */
+                                                     kPORT_InputNormal,
+                                                     /* Pin Control Register fields [15:0] are not locked */
+                                                     kPORT_UnlockRegister};
+    /* PORT1_14 is configured as F3_P2 */
+    PORT_SetPinConfig(PORT1, 14U, &port1_14_config);
+
+    /* cs[0] */
+    const port_pin_config_t port1_15_config = {/* Internal pull-up resistor is enabled */
+                                                     kPORT_PullUp,
+                                                     /* Low internal pull resistor value is selected. */
+                                                     kPORT_LowPullResistor,
+                                                     /* Slow slew rate is configured */
+                                                     kPORT_SlowSlewRate,
+                                                     /* Passive input filter is disabled */
+                                                     kPORT_PassiveFilterDisable,
+                                                     /* Open drain output is disabled */
+                                                     kPORT_OpenDrainDisable,
+                                                     /* Low drive strength is configured */
+                                                     kPORT_LowDriveStrength,
+                                                     /* Pin is configured as FC3_P3 */
+                                                     kPORT_MuxAlt3,
+                                                     /* Digital input enabled */
+                                                     kPORT_InputBufferEnable,
+                                                     /* Digital input is not inverted */
+                                                     kPORT_InputNormal,
+                                                     /* Pin Control Register fields [15:0] are not locked */
+                                                     kPORT_UnlockRegister};
+    /* PORT1_15 is configured as F3_P3 */
+    PORT_SetPinConfig(PORT1, 15U, &port1_15_config);
+
+
 }
 /***********************************************************************************************************************
  * EOF
