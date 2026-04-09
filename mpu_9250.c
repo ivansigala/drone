@@ -6,6 +6,8 @@
 
 #include "mpu_9250.h"
 
+static spi_ctrl_t imu;
+
 void mpu9250_init(void* callback){
 
     spi_ctrl_t imu;
@@ -17,7 +19,7 @@ void mpu9250_init(void* callback){
 
 }
 
-void mpu9250_read_reg(spi_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length){
+void mpu9250_read_reg(uint8_t reg, uint8_t* data, size_t length){
     if (length == 0 || length >= MPU9250_MAX_TX_RX_LEN) return;
 
     uint8_t tx_buf[MPU9250_MAX_TX_RX_LEN] = {0};
@@ -33,7 +35,7 @@ void mpu9250_read_reg(spi_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length
     memcpy(data, &rx_buf[1], length);
 }
 
-void mpu9250_write_reg(spi_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length){
+void mpu9250_write_reg(uint8_t reg, uint8_t* data, size_t length){
     if (length == 0 || length >= MPU9250_MAX_TX_RX_LEN) return;
 
     uint8_t tx_buf[MPU9250_MAX_TX_RX_LEN] = {0};

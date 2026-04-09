@@ -18,6 +18,9 @@
 #include "board.h"
 #include "app.h"
 
+/* User includes */
+#include "mpu_9250.h"
+
 /*******************************************************************************
  * Definitions
  ******************************************************************************/
@@ -28,9 +31,21 @@
  ******************************************************************************/
 static void SensorTask(void *pvParameters);
 
+void IMU_Callback(LPSPI_Type *base, lpspi_master_edma_handle_t *handle, status_t status, void *userData);
+
 /*******************************************************************************
  * Code
  ******************************************************************************/
+
+ void IMU_Callback(LPSPI_Type *base, lpspi_master_edma_handle_t *handle, status_t status, void *userData)
+{
+    if (status == kStatus_Success)
+    {
+        
+    }
+
+    isTransferCompleted = true;
+}
 /*!
  * @brief Application entry point.
  */
@@ -38,7 +53,9 @@ int main(void)
 {
     /* Init board hardware. */
     BOARD_InitHardware();
-    
+
+    mpu9250_init(IMU_Callback);
+
     if (xTaskCreate(SensorTask , "Sensor_task", configMINIMAL_STACK_SIZE + 100, NULL, sensor_task_PRIORITY, NULL) !=
         pdPASS)
     {
