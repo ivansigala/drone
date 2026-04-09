@@ -12,6 +12,11 @@
 #include "dma_driver_mcxn947.h"
 #endif
 
+#include "mpu_9250_reg.h"
+
+#define MPU9250_SPI_READ_BIT  0x80
+#define MPU9250_MAX_TX_RX_LEN 32
+
 void mpu9250_init(void* callback);
 void mpu9250_read_reg(spi_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length);
 void mpu9250_write_reg(spi_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length);
