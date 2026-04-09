@@ -70,6 +70,8 @@ status_t dshot_init(dshotSystem_t *sys, void* telemetry_callback_ptr){
                    sys->motor3.pwm.submodule_ctrl);
     __enable_irq();
 
+    dshot_startup_sequence(sys);
+
     return kStatus_Success;
 }
 
@@ -165,6 +167,8 @@ void dshot_send_frame(dshotMotor_t *motor) {
 void dshot_send_frame_all(dshotSystem_t *sys) {
     
     uint8_t ldok_mask = 0;
+    uint8_t timer_mask = 0;
+    PWM_Type *pwm_base = sys->motor0.pwm.pwm_base;
     uint32_t destAddr_u16[MAX_SUPPORTED_MOTORS] = {0};
     uint16_t packets[MAX_SUPPORTED_MOTORS];
     uint32_t dma_buf_list[MAX_SUPPORTED_MOTORS] = {(uint32_t)dma_buf_all[0], (uint32_t)dma_buf_all[1], (uint32_t)dma_buf_all[2], (uint32_t)dma_buf_all[3]};
@@ -178,17 +182,15 @@ void dshot_send_frame_all(dshotSystem_t *sys) {
         }
         dma_buf_all[i][16] = 0;
         dma_buf_all[i][17] = 0;
-    }
-
-
-    for(int i = 0; i < MAX_SUPPORTED_MOTORS; i++){
+        
         destAddr_u16[i] = (uint32_t)&motors[i]->pwm.pwm_base->SM[motors[i]->pwm.submodule].VAL3;
-    }
-
-    for(int i = 0; i < MAX_SUPPORTED_MOTORS; i++){
         ldok_mask |= (1U << motors[i]->pwm.submodule);
+        timer_mask |= motors[i]->pwm.submodule_ctrl;
     }
 
+    PWM_StopTimer(pwm_base, timer_mask);
+
+    __disable_irq();
     // Call the DMA channels
     dma_transfer_submit_channels(dma_channels,
                                 dma_buf_list,
@@ -200,7 +202,9 @@ void dshot_send_frame_all(dshotSystem_t *sys) {
     
     pwm_set_ldok_mask(motors[0]->pwm.pwm_base, ldok_mask);
     
-    
+    PWM_StartTimer(pwm_base, timer_mask);
+    __enable_irq();
+
 }
 
 /*******************************************************************************
@@ -249,6 +253,27 @@ status_t esc_start_dma_rx(uint8_t *buffer, uint32_t length){
 
     return kStatus_Success;
 }
+
+void dshot_startup_sequence(dshotSystem_t *esc)
+{
+    /* Force 0 throttle on all motors for arming */
+    esc->motor0.dshot_control.throttle_u16 = 0;
+    esc->motor1.dshot_control.throttle_u16 = 0;
+    esc->motor2.dshot_control.throttle_u16 = 0;
+    esc->motor3.dshot_control.throttle_u16 = 0;
+
+    for(int i = 0; i < 500; i++) {
+        dshot_send_frame(&(esc->motor0));  
+        SDK_DelayAtLeastUs(1000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY);
+        dshot_send_frame(&(esc->motor1));
+        SDK_DelayAtLeastUs(1000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY);
+        dshot_send_frame(&(esc->motor2));
+        SDK_DelayAtLeastUs(1000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY);
+        dshot_send_frame(&(esc->motor3));
+        SDK_DelayAtLeastUs(1000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY);
+    }
+}
+
 
 
 

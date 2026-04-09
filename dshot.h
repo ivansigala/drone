@@ -13,9 +13,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include "fsl_common.h"
 
 #ifdef MCXN947
+#include "fsl_common.h"
 #include "uart_driver_mcxn947.h"
 #include "dma_driver_mcxn947.h"
 #include "pwm_driver_mcxn947.h"
@@ -195,5 +195,11 @@ uint8_t update_crc8(uint8_t crc, uint8_t crc_seed);
  * @return The calculated CRC8 value.
  */
 uint8_t get_crc8(uint8_t *Buf, uint8_t BufLen);
+
+/*!
+ * @brief Performs the startup sequence for DShot motors.
+ * @param esc Pointer to the DShot system structure.
+ */
+void dshot_startup_sequence(dshotSystem_t *esc);
 
 #endif /* DSHOT_H_ */

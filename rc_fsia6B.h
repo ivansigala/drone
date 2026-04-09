@@ -4,10 +4,11 @@
  * Created on: 6, April 2026
  */
 
-#include "uart_driver_mcxn947.h"
-
 #ifndef RC_FSIA6B_H
 #define RC_FSIA6B_H
+
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* Especific defines for MCXN947 */
 #ifdef MCXN947
@@ -20,6 +21,7 @@
 #define RC_CHANNEL_MIN 800    /* Minimum PWM value (microseconds) */
 #define RC_CHANNEL_MAX 2200   /* Maximum PWM value (microseconds) */
 #define RC_CHANNEL_CENTER 1500 /* Center/neutral PWM value */
+#define RC_TIMEOUT_MS 50    /* Timeout for waiting for a valid frame */
 
 typedef union
 {
@@ -76,8 +78,8 @@ typedef enum
 /* Function Prototypes */
 
 rc_status rc_init(void* func_ptr);
-void uart_sync_rx(uart_ctrl_t *ctrl);
-void rc_sync(void);
+rc_status uart_sync_rx(uart_ctrl_t *ctrl, uint32_t timeout_ms);
+rc_status rc_sync(uint32_t timeout_ms);
 rc_status rc_start_dma_rx(uint8_t *buffer, uint32_t length);
 rc_status rc_parse_frame(uint8_t *buffer, fs_ia6b_frame_t *parsed_frame);
 

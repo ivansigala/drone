@@ -46,7 +46,6 @@ void ESC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t stat
 /*******************************************************************************
  * Variables
  ******************************************************************************/
-// lpuart_edma_handle_t g_lpuartEdmaHandle;
 AT_NONCACHEABLE_SECTION_INIT(uint8_t g_rc_rxBuffer[FS_IA6B_FRAME_SIZE]) = {0};
 AT_NONCACHEABLE_SECTION_INIT(uint8_t g_esc_rxBuffer[DSHOT_TELEMETRY_FRAME_SIZE]) = {0};
 
@@ -111,7 +110,7 @@ int main(void)
 {
     timer_ctrl_t timer_0 ={
         .timer_id = 0,
-        .frequency = 800
+        .frequency = 700
     };
 
     /* Init board hardware. */
@@ -137,7 +136,7 @@ int main(void)
         while (1);
     }
 
-    if (xTaskCreate(RCParserTask, "rc_task", configMINIMAL_STACK_SIZE + 50, NULL, RC_task_PRIORITY, &rcParserTaskHandle) !=
+    if (xTaskCreate(RCParserTask, "rc_task", configMINIMAL_STACK_SIZE + 50, &esc, RC_task_PRIORITY, &rcParserTaskHandle) !=
         pdPASS)
     {
         PRINTF("Task creation failed!.\r\n");
@@ -228,11 +227,7 @@ static void DSHOTGeneratorTask(void *pvParameters)
             {
             case 0:
                 esc->motor0.dshot_control.requestTelemetry_b = true;
-                dshot_send_frame_all(esc);
-                // dshot_send_frame(&(esc->motor0));
-                // dshot_send_frame(&(esc->motor1));
-                // dshot_send_frame(&(esc->motor2));
-                // dshot_send_frame(&(esc->motor3));
+                dshot_send_frame(&(esc->motor0));
                 esc->motor0.dshot_control.requestTelemetry_b = false;
                 break;
             case 1:
@@ -250,7 +245,6 @@ static void DSHOTGeneratorTask(void *pvParameters)
                 dshot_send_frame(&(esc->motor3));
                 esc->motor3.dshot_control.requestTelemetry_b = false;
                 break;
-            
             default:
                 PRINTF("Invalid motor index in DSHOTGeneratorTask.\r\n");
                 break;
@@ -268,29 +262,42 @@ static void DSHOTGeneratorTask(void *pvParameters)
 static void RCParserTask(void *pvParameters)
 {
     fs_ia6b_frame_t current_rc_frame;
+    //dshotSystem_t *esc = (dshotSystem_t *)pvParameters;
+    TickType_t timeout_ticks = pdMS_TO_TICKS(RC_TIMEOUT_MS);
 
     rc_start_dma_rx(g_rc_rxBuffer, FS_IA6B_FRAME_SIZE);
 
     for (;;)
     {
+
         /* Wait to be notified by the EDMA RC ISR */
-        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY) == pdTRUE)
-        {
+        if (ulTaskNotifyTake(pdTRUE, timeout_ticks) == pdTRUE)
+        {   
             /* Check if the frame passes CRC and is successfully parsed */
             if (rc_parse_frame(g_rc_rxBuffer, &current_rc_frame) == kRC_StatusSucces) 
             {
-                PRINTF("%d\r\n", 
-                        current_rc_frame.channels.CH1.u16);
+                // PRINTF("%d\r\n", 
+                //         current_rc_frame.channels.CH1.u16);
+                // esc->motor0.dshot_control.throttle_u16 = ((current_rc_frame.channels.CH2.u16 - 1000) / 2) + 100;
+                // esc->motor1.dshot_control.throttle_u16 = ((current_rc_frame.channels.CH2.u16 - 1000) / 2) + 100;
+                // esc->motor2.dshot_control.throttle_u16 = ((current_rc_frame.channels.CH2.u16 - 1000) / 2) + 100;
+                // esc->motor3.dshot_control.throttle_u16 = ((current_rc_frame.channels.CH2.u16 - 1000) / 2) + 100;
             } 
             else 
             {
-                //PRINTF("Corrupt Frame or CRC mismatch.\r\n");
-                //rc_sync();
+                
+                if (rc_sync(RC_TIMEOUT_MS) == kRC_StatusFail) {
+                    // WARNING: Sync failed. Severe interference or disconnected receiver.
+                    // TODO: Trigger drone failsafe (e.g., drop throttle, level out)
+                    PRINTF("RC Signal Interference!\r\n");
+                }
             }
 
             /* Clean up and restart DMA reception for the next frame */
             
             rc_start_dma_rx(g_rc_rxBuffer, FS_IA6B_FRAME_SIZE);
+        } else {
+            //Handle remote control connection timeout (trigger failsafe)
         }
     }
 }
@@ -342,6 +349,7 @@ static void ESCTelemetryTask(void *pvParameters)
                 //         motor->dshot_telemtry.current_ca_u16,
                 //         motor->dshot_telemtry.consumption_mah_u16,
                 //         motor->dshot_telemtry.erpm_u16);
+                PRINTF("%d\r\n", motor->dshot_telemtry.erpm_u16);
             } else {
                 // PRINTF("Invalid ESC Telemetry Frame or CRC mismatch.\r\n");
             }

@@ -20,8 +20,6 @@ rc_status rc_init(void* func_ptr){
 
     uart_init(&rc_ctrl);
 
-    uart_sync_rx(&rc_ctrl);
-
     return kRC_StatusSucces;
 
 }
@@ -32,37 +30,56 @@ rc_status rc_start_dma_rx(uint8_t *buffer, uint32_t length){
     return kRC_StatusSucces;
 }
 
-void rc_sync(void){
-    uart_sync_rx(&rc_ctrl);
+rc_status rc_sync(uint32_t timeout_ms)
+{
+    return uart_sync_rx(&rc_ctrl, timeout_ms);
 }
 
-void uart_sync_rx(uart_ctrl_t *ctrl) 
+rc_status uart_sync_rx(uart_ctrl_t *ctrl, uint32_t timeout_ms) 
 {
     LPUART_Type *base = ctrl->uart_base;
     
-    /* 1. Clear any existing IDLE and Overrun flags */
+    // 1. Record the start time
+    TickType_t start_ticks = xTaskGetTickCount();
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    
     LPUART_ClearStatusFlags(base, kLPUART_IdleLineFlag | kLPUART_RxOverrunFlag);
 
-    /* 2. Wait until the bus goes idle  */
+    // 2. Wait until the bus goes idle OR the timeout is reached
     while (!(LPUART_GetStatusFlags(base) & kLPUART_IdleLineFlag))
     {
-        /* Flush the RX register to prevent hardware overrun while waiting */
+        // Flush the RX register
         if (LPUART_GetStatusFlags(base) & kLPUART_RxDataRegFullFlag)
         {
             (void)LPUART_ReadByte(base);
         }
+
+        // Check if we have exceeded the timeout
+        if ((xTaskGetTickCount() - start_ticks) > timeout_ticks)
+        {
+            // Clear flags before aborting to prevent leaving UART in a bad state
+            LPUART_ClearStatusFlags(base, kLPUART_IdleLineFlag | kLPUART_RxOverrunFlag | 
+                                          kLPUART_NoiseErrorFlag | kLPUART_FramingErrorFlag | 
+                                          kLPUART_ParityErrorFlag);
+            return kRC_StatusFail; // Timeout occurred!
+        }
+
+        // Yield the CPU for 1 RTOS tick (~1ms) so Motor Tasks can run
+        vTaskDelay(1);
     }
 
-    /* 3. The bus is now idle. Do one final flush of the RX buffer */
+    // 3. The bus is now idle. Do one final flush
     while (LPUART_GetStatusFlags(base) & kLPUART_RxDataRegFullFlag)
     {
         (void)LPUART_ReadByte(base);
     }
 
-    /* 4. Clear status flags one last time */
+    // 4. Clear status flags one last time
     LPUART_ClearStatusFlags(base, kLPUART_IdleLineFlag | kLPUART_RxOverrunFlag | 
                                   kLPUART_NoiseErrorFlag | kLPUART_FramingErrorFlag | 
                                   kLPUART_ParityErrorFlag);
+                                  
+    return kRC_StatusSucces;
 }
 
 
