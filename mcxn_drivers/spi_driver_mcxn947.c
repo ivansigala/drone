@@ -81,9 +81,10 @@ status_t spi_master_transfer(spi_ctrl_t *ctrl, uint8_t *txData, uint8_t *rxData,
     masterXfer.txData   = txData;
     masterXfer.rxData   = rxData;
     masterXfer.dataSize = dataSize;
+    masterXfer.configFlags = ctrl->pcs_for_transfer | kLPSPI_MasterByteSwap | kLPSPI_MasterPcsContinuous;
 
     if(ctrl->enable_dma == false){
-        return LPSPI_MasterTransferNonBlocking(ctrl->spi_base, &(g_spi_handles[ctrl->instance]), &masterXfer);
+        return LPSPI_MasterTransferBlocking(ctrl->spi_base, &masterXfer);
     }
 
     return LPSPI_MasterTransferEDMALite(ctrl->spi_base, &g_spi_edma_handles[ctrl->instance], &masterXfer);

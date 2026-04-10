@@ -11,6 +11,13 @@
 #include "spi_driver_mcxn947.h"
 #endif
 
-status_t bno_08x_init(bool dma_enable, void* callback);
+typedef struct imu_ctrl_s
+{
+    spi_ctrl_t spi_ctrl;
+} imu_ctrl_t;
+
+status_t bno_08x_init(imu_ctrl_t *imu, void* callback);
+status_t bno_08x_read_reg(imu_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length);
+status_t bno_08x_write_reg(imu_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length);
 
 #endif /* BNO_08X_H_ */

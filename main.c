@@ -33,6 +33,10 @@ static void SensorTask(void *pvParameters);
 
 //void IMU_Callback(LPSPI_Type *base, lpspi_master_edma_handle_t *handle, status_t status, void *userData);
 
+/*******************************************************************************
+ * Prototypes
+ ******************************************************************************/
+imu_ctrl_t imu;
 TaskHandle_t sensorTaskHandle = NULL;
 
 /*******************************************************************************
@@ -62,9 +66,9 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitHardware();
 
-    bno_08x_init(false, NULL);
+    bno_08x_init(&imu, NULL);
 
-    if (xTaskCreate(SensorTask , "Sensor_task", configMINIMAL_STACK_SIZE + 100, NULL, sensor_task_PRIORITY, NULL) !=
+    if (xTaskCreate(SensorTask , "Sensor_task", configMINIMAL_STACK_SIZE + 100, NULL, sensor_task_PRIORITY, &sensorTaskHandle) !=
         pdPASS)
     {
         PRINTF("Task creation failed!.\r\n");
@@ -80,9 +84,12 @@ int main(void)
  * @brief Task responsible for printing of "Hello world." message.
  */
 static void SensorTask(void *pvParameters)
-{
+{   
 
-    
+    uint8_t data[2] = {0};
+    uint8_t reg = 0x00; 
+
+    bno_08x_read_reg(&imu, reg, data, 1);
 
     for (;;)
     {
