@@ -116,7 +116,7 @@ void LPSPI3_InitPins(void)
     /* Enables the clock for PORT1: Enables clock */
     CLOCK_EnableClock(kCLOCK_Port1);
 
-    /* SDA */
+    /* SDO */
     const port_pin_config_t port1_12_config = {/* Internal pull-up resistor is enabled */
                                                      kPORT_PullUp,
                                                      /* Low internal pull resistor value is selected. */

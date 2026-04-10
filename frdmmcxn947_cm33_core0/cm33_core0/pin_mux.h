@@ -40,7 +40,7 @@ void BOARD_InitPins(void);
 /*!
  * @brief Cofigures LPSPI3 pins
  */
-void LPSPI3_InitPins(void)
+void LPSPI3_InitPins(void);
 
 #if defined(__cplusplus)
 }

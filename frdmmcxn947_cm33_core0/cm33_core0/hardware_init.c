@@ -28,7 +28,7 @@ void BOARD_InitHardware(void)
 
     CLOCK_EnableClock(kCLOCK_Dma0);
 
-    BOARD_InitPins();
+    BOARD_InitBootPins();
     BOARD_InitBootClocks();
     BOARD_InitDebugConsole();
 }

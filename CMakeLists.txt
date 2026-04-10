@@ -18,9 +18,9 @@ include(${SdkRootDirPath}/CMakeLists.txt)
 
 mcux_add_source(
     SOURCES main.c
+            sensors/mpu_9250/mpu_9250.c
+            sensors/bno_08x/bno_08x.c
             mcxn_drivers/spi_driver_mcxn947.c
-            mcxn_drivers/dma_driver_mcxn947.c
-            mpu_9250.c
 )
 
 mcux_add_macro(
@@ -30,7 +30,9 @@ mcux_add_macro(
 
 mcux_add_include(
     INCLUDES .
-             mcxn_drivers/
+            mcxn_drivers/
+            sensors/mpu_9250/
+            sensors/bno_08x/
 )
 mcux_convert_binary(BINARY ${APPLICATION_BINARY_DIR}/${MCUX_SDK_PROJECT_NAME}.bin)
 
