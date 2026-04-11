@@ -10,7 +10,16 @@
 #ifdef MCXN947
 #include "spi_driver_mcxn947.h"
 #include "gpio_driver_mcxn947.h"
+#include "fsl_debug_console.h"
 #endif
+
+#include "sh2.h"
+#include "sh2_err.h"
+#include "sh2_hal.h"
+#include "sh2_SensorValue.h"
+#include "sh2_util.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 typedef struct imu_ctrl_s
 {
@@ -19,8 +28,6 @@ typedef struct imu_ctrl_s
 
 } imu_ctrl_t;
 
-status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback);
-status_t bno_08x_read_reg(imu_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length);
-status_t bno_08x_write_reg(imu_ctrl_t *imu, uint8_t reg, uint8_t* data, size_t length);
+status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, sh2_SensorCallback_t sh2_callback);
 
 #endif /* BNO_08X_H_ */

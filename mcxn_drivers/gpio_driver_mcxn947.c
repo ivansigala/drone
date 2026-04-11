@@ -265,8 +265,9 @@ void gpio_attach_interrupt(gpio_ctrl_t *gpio, void* callback){
  */
 void gpio_clear_interrupt_flag(GPIO_Type* gpio_base, uint8_t pin){
 	
+    __disable_irq();
     GPIO_GpioClearInterruptFlags(gpio_base, 0x1U << pin);
-    
+    __enable_irq();
 }
 
 

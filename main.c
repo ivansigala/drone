@@ -21,6 +21,7 @@
 
 /* User includes */
 #include "bno_08x.h"
+#include "euler.h"
 
 /*******************************************************************************
  * Definitions
@@ -32,8 +33,6 @@
  ******************************************************************************/
 static void SensorTask(void *pvParameters);
 
-//void IMU_Callback(LPSPI_Type *base, lpspi_master_edma_handle_t *handle, status_t status, void *userData);
-
 /*******************************************************************************
  * Prototypes
  ******************************************************************************/
@@ -44,22 +43,8 @@ TaskHandle_t sensorTaskHandle = NULL;
  * Code
  ******************************************************************************/
 
-// void IMU_Callback(LPSPI_Type *base, lpspi_master_edma_handle_t *handle, status_t status, void *userData)
-// {
-//     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-//     if (status == kStatus_Success)
-//     {
-//         if (sensorTaskHandle != NULL)
-//         {
-//             // Unblock the SensorTask to let it know the DMA transfer is done
-//             vTaskNotifyGiveFromISR(sensorTaskHandle, &xHigherPriorityTaskWoken);
-//             portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-//         }
-//     }
-// }
-
-void IMU_Update_Callback(void *userData)
+void IMU_Update_Callback(void)
 {   
     gpio_clear_interrupt_flag(imu.gpio_ctrl.gpio_base, imu.gpio_ctrl.pin);
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -72,6 +57,20 @@ void IMU_Update_Callback(void *userData)
     }
 }
 
+void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
+    sh2_SensorValue_t sensorValue;
+
+    if (sh2_decodeSensorEvent(&sensorValue, event) == SH2_OK) {
+        
+        // Note: The decoded struct uses 'sensorId' instead of 'reportId'
+        if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
+            
+            sh2_RotationVectorWAcc_t *rv = &sensorValue.un.rotationVector;
+            
+            PRINTF("Q: i:%.2f j:%.2f k:%.2f r:%.2f\r\n", rv->i, rv->j, rv->k, rv->real);
+        }
+    }
+}
 /*!
  * @brief Application entry point.
  */
@@ -80,7 +79,7 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitHardware();
 
-    bno_08x_init(&imu, NULL, IMU_Update_Callback);
+    bno_08x_init(&imu, NULL, IMU_Update_Callback, sh2_sensor_callback);
 
     if (xTaskCreate(SensorTask , "Sensor_task", configMINIMAL_STACK_SIZE + 100, NULL, sensor_task_PRIORITY, &sensorTaskHandle) !=
         pdPASS)
@@ -95,20 +94,17 @@ int main(void)
 }
 
 /*!
- * @brief Task responsible for printing of "Hello world." message.
+ * @brief Task responsible for procesing the IMU data.
  */
 static void SensorTask(void *pvParameters)
 {   
 
-    uint8_t data[2] = {0};
-    uint8_t reg = 0x00; 
-
-    bno_08x_read_reg(&imu, reg, data, 1);
-
     for (;;)
     {
-
-
+        // Block indefinitely until the IMU_Update_Callback fires the notification
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        
+        sh2_service();
 
     }
 }
