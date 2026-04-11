@@ -67,6 +67,20 @@ void gpio_setup(GPIO_Type* gpio_base, PORT_Type *port_base, uint8_t pin)
         kGPIO_DigitalInput,
         0,
     };
+
+    const port_pin_config_t port_config = {
+        kPORT_PullDown,             // Pull-down for your 3.3V wire test
+        kPORT_LowPullResistor,
+        kPORT_FastSlewRate,
+        kPORT_PassiveFilterDisable,
+        kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength,
+        kPORT_MuxAsGpio,           
+        kPORT_InputBufferEnable,    
+        kPORT_InputNormal,
+        kPORT_UnlockRegister
+    };
+
     /* Enable GPIO clock if not already enabled */
     if(port_base == PORT0) {
         CLOCK_EnableClock(kCLOCK_Port0);
@@ -85,8 +99,7 @@ void gpio_setup(GPIO_Type* gpio_base, PORT_Type *port_base, uint8_t pin)
         CLOCK_EnableClock(kCLOCK_Gpio4);
     } 
     
-    /* Set pin as GPIO input without pull-resistor */
-    PORT_SetPinMux(port_base, pin, kPORT_MuxAsGpio);
+    PORT_SetPinConfig(port_base, pin, &port_config);
 
     GPIO_PinInit(gpio_base, pin, &pinConfig);
 }
