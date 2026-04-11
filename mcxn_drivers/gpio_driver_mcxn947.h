@@ -127,4 +127,19 @@ void gpio_attach_interrupt(gpio_ctrl_t *gpio, void* callback);
 void gpio_clear_interrupt_flag(GPIO_Type* gpio_base, uint8_t pin);
 
 
+/*!
+ * @brief Set output value for a GPIO pin
+ * @param gpio Pointer to gpio_ctrl_t structure
+ * @param val Output value (0 or 1)
+ */
+void gpio_set_output(gpio_ctrl_t *gpio, uint32_t val);
+
+/*!
+ * @brief Read input value from a GPIO pin
+ * @param gpio Pointer to gpio_ctrl_t structure
+ * @return Input value (0 or 1)
+ */
+uint32_t gpio_read_input(gpio_ctrl_t *gpio);
+
+
 #endif /* GPIO_DRIVER_MCXN947_H_ */

@@ -46,7 +46,7 @@ TaskHandle_t sensorTaskHandle = NULL;
 
 void IMU_Update_Callback(void)
 {   
-    gpio_clear_interrupt_flag(imu.gpio_ctrl.gpio_base, imu.gpio_ctrl.pin);
+    gpio_clear_interrupt_flag(imu.gpio_event.gpio_base, imu.gpio_event.pin);
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     if (sensorTaskHandle != NULL)

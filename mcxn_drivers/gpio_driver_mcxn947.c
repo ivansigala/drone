@@ -62,6 +62,16 @@ void gpio_set_output(gpio_ctrl_t *gpio, uint32_t val)
 }
 
 /*!
+ * @brief Reads the current input of a GPIO pin.
+ *
+ * @param gpio Pointer to the GPIO control structure containing base address and pin number.
+ * @return The input value: 0 for logic low, 1 for logic high.
+ */
+uint32_t gpio_read_input(gpio_ctrl_t *gpio){
+    return GPIO_PinRead(gpio->gpio_base, gpio->pin);
+}
+
+/*!
  * @brief Toggles the output state of a GPIO pin.
  * 
  * Inverts the current output logic level of the specified GPIO pin.
