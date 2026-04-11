@@ -55,6 +55,7 @@ static int hal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t
 
 status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, sh2_SensorCallback_t sh2_callback)
 {
+    status_t spi_status;
     gpio_ctrl_t gpio_event ={
         .gpio_base = GPIO1,
         .port_base = PORT1,
@@ -84,6 +85,10 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, 
 
     g_imu = imu; // Store in global for hal_read access
 
+    spi_status = spi_init(&imu->spi_ctrl);
+    if (spi_status != kStatus_Success) {
+        return spi_status;
+    }
     
     gpio_init(&imu->gpio_reset);
     gpio_set_output(&imu->gpio_reset, 0);
@@ -123,7 +128,7 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, 
 
     sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config);
 
-    return spi_init(&imu->spi_ctrl);
+    return spi_status;
 
 }
 
