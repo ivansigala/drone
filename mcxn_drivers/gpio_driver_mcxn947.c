@@ -219,7 +219,7 @@ void gpio_setup(GPIO_Type* gpio_base, PORT_Type *port_base, uint8_t pin)
 void gpio_attach_interrupt(gpio_ctrl_t *gpio, void* callback){
     
     /* Then configure GPIO interrupt output */
-    GPIO_SetPinInterruptConfig(gpio->gpio_base, gpio->pin, kGPIO_InterruptRisingEdge);
+    GPIO_SetPinInterruptConfig(gpio->gpio_base, gpio->pin, kGPIO_InterruptFallingEdge);
 
     if(gpio->gpio_base == GPIO0){
         EnableIRQ(GPIO00_IRQn);
