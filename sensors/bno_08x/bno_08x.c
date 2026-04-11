@@ -16,6 +16,8 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback)
         .pin = 17
     };
 
+    imu->gpio_ctrl = gpio;
+
     NVIC_SetPriority(GPIO10_IRQn, 5);
     NVIC_SetPriority(GPIO11_IRQn, 5);
 

@@ -15,6 +15,7 @@
 typedef struct imu_ctrl_s
 {
     spi_ctrl_t spi_ctrl;
+    gpio_ctrl_t gpio_ctrl;
 
 } imu_ctrl_t;
 
