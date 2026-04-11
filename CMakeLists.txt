@@ -21,6 +21,12 @@ mcux_add_source(
             sensors/mpu_9250/mpu_9250.c
             sensors/bno_08x/bno_08x.c
             mcxn_drivers/spi_driver_mcxn947.c
+            mcxn_drivers/gpio_driver_mcxn947.c
+            sensors/bno_08x/sht_lib/euler.c
+            sensors/bno_08x/sht_lib/sh2_SensorValue.c
+            sensors/bno_08x/sht_lib/sh2_util.c
+            sensors/bno_08x/sht_lib/sh2.c
+            sensors/bno_08x/sht_lib/shtp.c
 )
 
 mcux_add_macro(
@@ -33,6 +39,7 @@ mcux_add_include(
             mcxn_drivers/
             sensors/mpu_9250/
             sensors/bno_08x/
+            sensors/bno_08x/sht_lib/
 )
 mcux_convert_binary(BINARY ${APPLICATION_BINARY_DIR}/${MCUX_SDK_PROJECT_NAME}.bin)
 

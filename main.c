@@ -18,6 +18,7 @@
 #include "board.h"
 #include "app.h"
 
+
 /* User includes */
 #include "bno_08x.h"
 
@@ -58,6 +59,18 @@ TaskHandle_t sensorTaskHandle = NULL;
 //     }
 // }
 
+void IMU_Update_Callback(void *userData)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (sensorTaskHandle != NULL)
+    {
+        // Unblock the SensorTask to let it know the DMA transfer is done
+        vTaskNotifyGiveFromISR(sensorTaskHandle, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+}
+
 /*!
  * @brief Application entry point.
  */
@@ -66,7 +79,7 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitHardware();
 
-    bno_08x_init(&imu, NULL);
+    bno_08x_init(&imu, NULL, IMU_Update_Callback);
 
     if (xTaskCreate(SensorTask , "Sensor_task", configMINIMAL_STACK_SIZE + 100, NULL, sensor_task_PRIORITY, &sensorTaskHandle) !=
         pdPASS)

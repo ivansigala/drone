@@ -6,12 +6,26 @@
 
 #include "bno_08x.h"
 
-status_t bno_08x_init(imu_ctrl_t *imu, void* callback)
+status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback)
 {
+
+    gpio_ctrl_t gpio ={
+        .gpio_base = GPIO1,
+        .port_base = PORT1,
+        .dir = gpio_input,
+        .pin = 17
+    };
+
+    NVIC_SetPriority(GPIO10_IRQn, 5);
+    NVIC_SetPriority(GPIO11_IRQn, 5);
+
 #ifdef MCXN947
-    spi_get_defaultconfig_imu(&imu->spi_ctrl, callback);
+    spi_get_defaultconfig_imu(&imu->spi_ctrl, spi_callback);
     imu->spi_ctrl.enable_dma = false;
 #endif
+
+    gpio_init(&gpio);
+    gpio_attach_interrupt(&gpio, gpio_callback);
 
     return spi_init(&imu->spi_ctrl);
 
