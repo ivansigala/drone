@@ -99,6 +99,8 @@ int main(void)
 static void SensorTask(void *pvParameters)
 {   
 
+    sh2_service();
+    
     for (;;)
     {
         // Block indefinitely until the IMU_Update_Callback fires the notification

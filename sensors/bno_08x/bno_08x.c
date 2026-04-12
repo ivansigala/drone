@@ -21,7 +21,7 @@ static uint32_t hal_getTimeUs(sh2_Hal_t *self) {
 
 // SPI Write Bridge
 static int hal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
-    // Note: Assuming 'g_imu' is accessible here
+    
     status_t status = spi_master_transfer(&g_imu->spi_ctrl, pBuffer, NULL, len);
     return (status == kStatus_Success) ? len : 0;
 }
@@ -85,20 +85,19 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, 
 
     g_imu = imu; // Store in global for hal_read access
 
-
-    gpio_init(&imu->gpio_reset);
-    gpio_set_output(&imu->gpio_reset, 0);
-    SDK_DelayAtLeastUs(10000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 10ms delay for reset
-    gpio_set_output(&imu->gpio_reset, 1);
-    SDK_DelayAtLeastUs(100000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 100ms delay
-
-    gpio_init(&imu->gpio_event);
-    gpio_attach_interrupt(&imu->gpio_event, gpio_callback);
-
     spi_status = spi_init(&imu->spi_ctrl);
     if (spi_status != kStatus_Success) {
         return spi_status;
     }
+
+    //SDK_DelayAtLeastUs(10000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 10ms delay for reset
+    gpio_init(&imu->gpio_reset);
+    gpio_set_output(&imu->gpio_reset, 0);
+    SDK_DelayAtLeastUs(10000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 10ms delay for reset
+    gpio_set_output(&imu->gpio_reset, 1);
+
+    gpio_init(&imu->gpio_event);
+    gpio_attach_interrupt(&imu->gpio_event, gpio_callback);
 
 
     // Mount the HAL to the CEVA Library
