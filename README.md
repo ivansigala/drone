@@ -52,10 +52,10 @@ graph TB
     CEVA -->|Decode| Task
     Task -->|Print| Console
     
-    style Hardware fill:#e1f5ff
-    style MCU fill:#f3e5f5
-    style BNO fill:#fff3e0
-    style CEVA fill:#e8f5e9
+    style Hardware fill:#9a4c1f
+    style MCU fill:#355f1d
+    style BNO fill:#2e5291
+    style CEVA fill:#572135
 ```
 
 ---
@@ -98,8 +98,8 @@ graph LR
     BNO -->|HINT| Interrupts
     MCXN947 -->|RESET| Interrupts
     
-    style MCXN947 fill:#b3e5fc
-    style BNO fill:#ffe0b2
+    style MCXN947 fill:#2e5291
+    style BNO fill:#355f1d
 ```
 
 ---
@@ -122,12 +122,12 @@ sequenceDiagram
 
     Note over BNO, Console: 100Hz Update Cycle (Every 10ms)
     
-    rect rgb(46, 82, 145)
+    rect #2e5291
     Note over BNO: Data Ready
     BNO->>ISR: HINT Pin Falls LOW
     end
     
-    rect rgb(53, 95, 29)
+    rect #355f1d
     activate ISR
     Note over ISR: ISR Context
     ISR->>ISR: gpio_clear_interrupt_flag()
@@ -136,7 +136,7 @@ sequenceDiagram
     deactivate ISR
     end
     
-    rect rgb(154, 76, 31)
+    rect #9a4c1f
     Note over Task: Task Wakes Up
     activate Task
     Task->>Task: ulTaskNotifyTake(pdTRUE, PORT_MAX_DELAY)
@@ -163,7 +163,7 @@ sequenceDiagram
     deactivate CEVA
     end
     
-    rect rgb(87, 33, 53)
+    rect #572135
     Note over Task: Output Data
     activate Task
     Task->>Console: PRINTF("Q: i:%.2f j:%.2f k:%.2f r:%.2f")
