@@ -85,19 +85,21 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, 
 
     g_imu = imu; // Store in global for hal_read access
 
+
+    gpio_init(&imu->gpio_reset);
+    gpio_set_output(&imu->gpio_reset, 0);
+    SDK_DelayAtLeastUs(10000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 10ms delay for reset
+    gpio_set_output(&imu->gpio_reset, 1);
+    SDK_DelayAtLeastUs(100000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 100ms delay
+
+    gpio_init(&imu->gpio_event);
+    gpio_attach_interrupt(&imu->gpio_event, gpio_callback);
+
     spi_status = spi_init(&imu->spi_ctrl);
     if (spi_status != kStatus_Success) {
         return spi_status;
     }
-    
-    gpio_init(&imu->gpio_reset);
-    gpio_set_output(&imu->gpio_reset, 0);
-    vTaskDelay(pdMS_TO_TICKS(10));
-    gpio_set_output(&imu->gpio_reset, 1);
-    vTaskDelay(pdMS_TO_TICKS(100));
 
-    gpio_init(&imu->gpio_event);
-    gpio_attach_interrupt(&imu->gpio_event, gpio_callback);
 
     // Mount the HAL to the CEVA Library
     sh2_hal.open = hal_open;
