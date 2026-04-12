@@ -122,12 +122,12 @@ sequenceDiagram
 
     Note over BNO, Console: 100Hz Update Cycle (Every 10ms)
     
-    rect #2e5291
+    rect rgb(46, 82, 145)
     Note over BNO: Data Ready
     BNO->>ISR: HINT Pin Falls LOW
     end
     
-    rect #355f1d
+    rect rgb(53, 95, 29)
     activate ISR
     Note over ISR: ISR Context
     ISR->>ISR: gpio_clear_interrupt_flag()
@@ -136,7 +136,7 @@ sequenceDiagram
     deactivate ISR
     end
     
-    rect #9a4c1f
+    rect rgb(154, 76, 31)
     Note over Task: Task Wakes Up
     activate Task
     Task->>Task: ulTaskNotifyTake(pdTRUE, PORT_MAX_DELAY)
@@ -163,7 +163,7 @@ sequenceDiagram
     deactivate CEVA
     end
     
-    rect #572135
+    rect rgb(87, 33, 53)
     Note over Task: Output Data
     activate Task
     Task->>Console: PRINTF("Q: i:%.2f j:%.2f k:%.2f r:%.2f")
