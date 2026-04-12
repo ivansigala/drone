@@ -122,12 +122,12 @@ sequenceDiagram
 
     Note over BNO, Console: 100Hz Update Cycle (Every 10ms)
     
-    rect rgb(200, 220, 255)
+    rect rgb(46, 82, 145)
     Note over BNO: Data Ready
     BNO->>ISR: HINT Pin Falls LOW
     end
     
-    rect rgb(220, 255, 200)
+    rect rgb(53, 95, 29)
     activate ISR
     Note over ISR: ISR Context
     ISR->>ISR: gpio_clear_interrupt_flag()
@@ -136,14 +136,14 @@ sequenceDiagram
     deactivate ISR
     end
     
-    rect rgb(255, 220, 200)
+    rect rgb(154, 76, 31)
     Note over Task: Task Wakes Up
     activate Task
     Task->>Task: ulTaskNotifyTake(pdTRUE, PORT_MAX_DELAY)
     Note over Task: Blocked → Ready
     end
     
-    rect rgb(200, 255, 220)
+    rect rgb(50, 103, 69)
     activate CEVA
     Note over CEVA: Process Sensor Data
     Task->>CEVA: sh2_service()
@@ -163,14 +163,14 @@ sequenceDiagram
     deactivate CEVA
     end
     
-    rect rgb(255, 200, 220)
+    rect rgb(87, 33, 53)
     Note over Task: Output Data
     activate Task
     Task->>Console: PRINTF("Q: i:%.2f j:%.2f k:%.2f r:%.2f")
     deactivate Task
     end
     
-    rect rgb(220, 200, 255)
+    rect rgb(71, 46, 115)
     Note over Task: Wait for Next Interrupt
     Task->>Task: Block on ulTaskNotifyTake()
     deactivate Task
@@ -380,77 +380,6 @@ Q: i:0.06 j:-0.13 k:0.84 r:0.52
 
 ## Known Issues & Troubleshooting
 
-### Issue 1: No Interrupts / HINT Pin Not Triggering ❌
-
-**Symptom**: SensorTask never unblocks, no data output
-
-**Root Cause**: GPIO interrupt configuration requires TWO levels (PORT + GPIO)
-- PORT level detects interrupt condition
-- GPIO level routes to module
-
-**Solution**: ✅ **Already Fixed in gpio_driver_mcxn947.c**
-- GPIO clock enabled for each port
-- `PORT_SetPinInterruptConfig()` called before `GPIO_SetPinInterruptConfig()`
-- See [gpio-isr-fixes.md](/memories/repo/gpio-isr-fixes.md)
-
-### Issue 2: Garbled Serial Output
-
-**Symptom**: Random characters or incomplete quaternion data
-
-**Possible Causes**:
-1. Serial baudrate mismatch (should be 115200)
-2. UART not initialized in `BOARD_InitHardware()`
-3. Debug console buffering issues
-
-**Solution**:
-```c
-// Verify in clock/pin config:
-CLOCK_EnableClock(kCLOCK_Uart0);
-// Check BOARD_InitHardware() includes UART setup
-```
-
-### Issue 3: SPI Data Corruption
-
-**Symptom**: Malformed SHTP packets, CRC errors
-
-**Possible Causes**:
-1. SPI clock too fast for sensor
-2. CS pin not being toggled between packets
-3. DMA conflicts
-
-**Solution**:
-```c
-// Verify SPI baudrate in spi_driver_mcxn947.c:
-masterConfig.baudRate = IMU_SPI_TRANSFER_BAUDRATE; // Should be 1-4 MHz
-```
-
-### Issue 4: Task Heap Overflow
-
-**Symptom**: HardFault or watchdog reset after hours of operation
-
-**Possible Cause**: Sensor library not freeing temporary buffers
-
-**Solution**:
-- Increase task stack: `configMINIMAL_STACK_SIZE + 256` (in main.c)
-- Monitor heap fragmentation
-
----
-
-## GPIO ISR Critical Fixes (Applied)
-
-⚠️ **Important**: The following MCX-specific issues were identified and fixed:
-
-### Missing GPIO Clock Enable
-- GPIO module clock was never enabled
-- Only PORT clock was enabled
-- **Fix**: Added conditional `CLOCK_EnableClock(kCLOCK_Gpio0-5)` in `gpio_setup()`
-
-### Missing PORT Interrupt Configuration 
-- NXP MCX devices require `PORT_SetPinInterruptConfig()` BEFORE `GPIO_SetPinInterruptConfig()`
-- Without PORT configuration, hardware never detects interrupt condition
-- **Fix**: Added `PORT_SetPinInterruptConfig()` in `gpio_attach_interrupt()`
-
-These fixes are critical for interrupt functionality on MCX MCUs. See gpio-isr-fixes.md for details.
 
 ---
 
