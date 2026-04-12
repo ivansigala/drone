@@ -179,7 +179,7 @@ void gpio_setup(GPIO_Type* gpio_base, PORT_Type *port_base, uint8_t pin)
 
     const port_pin_config_t port_config = {
         kPORT_PullDown,             // Pull-down for your 3.3V wire test
-        kPORT_LowPullResistor,
+        kPORT_HighPullResistor,
         kPORT_FastSlewRate,
         kPORT_PassiveFilterDisable,
         kPORT_OpenDrainDisable,
