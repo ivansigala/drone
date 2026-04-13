@@ -40,15 +40,22 @@ static int hal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t
     // To avoid toggling Chip Select (PCS) between the header read and body read,
     // which breaks the BNO085 SPI protocol, we read a fixed chunk large enough 
     // for standard reports (like Quaternions) in a single transaction.
-    uint8_t temp_buf[SH2_HAL_MAX_TRANSFER_IN] = {0}; 
+    static uint8_t temp_buf[SH2_HAL_MAX_TRANSFER_IN_APP] = {0}; 
+    memset(temp_buf, 0, sizeof(temp_buf)); // Clear it before use
+
     spi_master_transfer(&g_imu->spi_ctrl, NULL, temp_buf, sizeof(temp_buf));
 
     // Extract length from SHTP header
     uint16_t packet_len = (temp_buf[0] | (temp_buf[1] << 8)) & 0x7FFF;
     
-    if (packet_len > 0 && packet_len <= sizeof(temp_buf) && packet_len <= len) {
-        memcpy(pBuffer, temp_buf, packet_len);
-        return packet_len;
+    if (packet_len > 0) {
+        uint16_t copy_len = packet_len;
+        if (copy_len > len) copy_len = len; // Truncate to what the CEVA library can hold
+        if (copy_len > sizeof(temp_buf)) copy_len = sizeof(temp_buf);
+        
+        memcpy(pBuffer, temp_buf, copy_len);
+        
+        return copy_len;
     }
     return 0;
 }

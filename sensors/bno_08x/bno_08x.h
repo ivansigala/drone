@@ -21,6 +21,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#define SH2_HAL_MAX_TRANSFER_IN_APP 512 // Max packet size for BNO085 is 128 bytes
+#define SH2_HAL_MAX_TRANSFER_OUT_APP 128 // Max packet size for BNO085 is 128 bytes
+
 typedef struct imu_ctrl_s
 {
     spi_ctrl_t spi_ctrl;

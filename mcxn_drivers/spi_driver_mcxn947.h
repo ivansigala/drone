@@ -11,10 +11,10 @@
 #include "fsl_lpspi.h"
 #include "fsl_lpspi_edma.h"
 
-#define IMU_SPI_TRANSFER_BAUDRATE           500000U  /* 1 MHz */
+#define IMU_SPI_TRANSFER_BAUDRATE           4000000U  /* 3 MHz */
 #define IMU_SPI_MASTER_BASEADDR             (LPSPI3)
 #define IMU_SPI_MASTER_INSTANCE             (LPSPI_GetInstance(IMU_SPI_MASTER_BASEADDR))
-#define IMU_SPI_MASTER_CLK_FREQ             CLOCK_GetFreq(IMU_SPI_MASTER_INSTANCE)
+#define IMU_SPI_MASTER_CLK_FREQ             CLOCK_GetLPFlexCommClkFreq(IMU_SPI_MASTER_INSTANCE)
 #define IMU_SPI_MASTER_PCS_FOR_INIT         (kLPSPI_Pcs0)
 #define IMU_SPI_MASTER_PCS_FOR_TRANSFER     (kLPSPI_MasterPcs0)
 #define IMU_SPI_MASTER_CPOL                 kLPSPI_ClockPolarityActiveLow

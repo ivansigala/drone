@@ -24,7 +24,7 @@ void BOARD_InitHardware(void)
 
     /* attach FRO 12M to FLEXCOMM3 */
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom3Clk, 1u);
-    CLOCK_AttachClk(kFRO12M_to_FLEXCOMM3);
+    CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM3);
 
     CLOCK_EnableClock(kCLOCK_Dma0);
 

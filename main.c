@@ -79,8 +79,6 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitHardware();
 
-    bno_08x_init(&imu, NULL, IMU_Update_Callback, sh2_sensor_callback);
-
     if (xTaskCreate(SensorTask , "Sensor_task", configMINIMAL_STACK_SIZE + 100, NULL, sensor_task_PRIORITY, &sensorTaskHandle) !=
         pdPASS)
     {
@@ -88,6 +86,9 @@ int main(void)
         while (1)
             ;
     }
+
+    bno_08x_init(&imu, NULL, IMU_Update_Callback, sh2_sensor_callback);
+
     vTaskStartScheduler();
     for (;;)
         ;
@@ -99,8 +100,8 @@ int main(void)
 static void SensorTask(void *pvParameters)
 {   
 
-    sh2_service();
-    
+    //sh2_service();
+
     for (;;)
     {
         // Block indefinitely until the IMU_Update_Callback fires the notification
