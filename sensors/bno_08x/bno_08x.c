@@ -6,64 +6,91 @@
 
 #include "bno_08x.h"
 
+#define SHTP_HDR_LEN 4
+
 static sh2_Hal_t sh2_hal;
 static imu_ctrl_t *g_imu; // Make imu global so hal_read can access it for GPIO state
+static volatile bool g_reset_occurred = false; // Flag set by SH2 event callback
+static volatile bool g_ps0_asserted = false;
 
-//Open/Close stubs (You already initialize hardware in bno_08x_init)
+// Open/Close stubs (hardware is initialized in bno_08x_init)
 static int hal_open(sh2_Hal_t *self) { return SH2_OK; }
 static void hal_close(sh2_Hal_t *self) {}
 
-// Open/Close stubs (You already initialize hardware in bno_08x_init)
 static uint32_t hal_getTimeUs(sh2_Hal_t *self) {
-    // FreeRTOS tick count converted to microseconds
-    return xTaskGetTickCount() * 1000; 
+    // FreeRTOS tick count converted to microseconds.
+    return (uint32_t)(xTaskGetTickCount() * (1000000U / configTICK_RATE_HZ));
+}
+
+status_t bno_08x_tare(void) {
+    int rc = sh2_setTareNow(SH2_TARE_X | SH2_TARE_Y | SH2_TARE_Z,
+                            SH2_TARE_BASIS_ROTATION_VECTOR);
+    return (rc == SH2_OK) ? kStatus_Success : kStatus_Fail;
 }
 
 // SPI Write Bridge
-static int hal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
-    
-    status_t status = spi_master_transfer(&g_imu->spi_ctrl, pBuffer, NULL, len);
-    return (status == kStatus_Success) ? len : 0;
-}
-
-
-// SPI Read Bridge (The tricky part)
 static int hal_read(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len, uint32_t *t_us) {
-    // The CEVA library polls this function. We only read if the BNO085 has pulled HINT low.
-    if (GPIO_PinRead(g_imu->gpio_event.gpio_base, g_imu->gpio_event.pin) != 0) {
-        return 0; // HINT is high, no data ready
+    // While waiting for PS0 wake acknowledgment, do not attempt a read.
+    // The HINT low in this state belongs to the write handshake, not incoming data.
+    if (g_ps0_asserted) {
+        return 0;
     }
-    
+
+    if (gpio_read_input(&g_imu->gpio_event) != 0) {
+        return 0;
+    }
+
     *t_us = hal_getTimeUs(self);
-
-    // BNO085 requires reading the 4-byte header to determine packet length.
-    // To avoid toggling Chip Select (PCS) between the header read and body read,
-    // which breaks the BNO085 SPI protocol, we read a fixed chunk large enough 
-    // for standard reports (like Quaternions) in a single transaction.
-    static uint8_t temp_buf[SH2_HAL_MAX_TRANSFER_IN_APP] = {0}; 
-    memset(temp_buf, 0, sizeof(temp_buf)); // Clear it before use
-
+    static uint8_t temp_buf[SH2_HAL_MAX_TRANSFER_IN_APP] = {0};
+    memset(temp_buf, 0, sizeof(temp_buf));
     spi_master_transfer(&g_imu->spi_ctrl, NULL, temp_buf, sizeof(temp_buf));
 
-    // Extract length from SHTP header
     uint16_t packet_len = (temp_buf[0] | (temp_buf[1] << 8)) & 0x7FFF;
-    
-    if (packet_len > 0) {
+    if (packet_len >= SHTP_HDR_LEN) {
         uint16_t copy_len = packet_len;
-        if (copy_len > len) copy_len = len; // Truncate to what the CEVA library can hold
+        if (copy_len > len) copy_len = len;
         if (copy_len > sizeof(temp_buf)) copy_len = sizeof(temp_buf);
-        
         memcpy(pBuffer, temp_buf, copy_len);
-        
         return copy_len;
     }
     return 0;
 }
 
-status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, sh2_SensorCallback_t sh2_callback)
+static int hal_write(sh2_Hal_t *self, uint8_t *pBuffer, unsigned len) {
+    if (!g_ps0_asserted) {
+        // First call: assert nWAKE and return busy.
+        // txProcess will call shtp_service() then retry hal_write.
+        gpio_set_output(&g_imu->gpio_ps0, 0);
+        g_ps0_asserted = true;
+        return 0;
+    }
+
+    // Subsequent calls: wait for BNO085 to acknowledge by pulling HINT low.
+    if (gpio_read_input(&g_imu->gpio_event) != 0) {
+        return 0;  // HINT still high — BNO085 not yet ready, keep retrying
+    }
+
+    // HINT is low — BNO085 acknowledged the wake. Perform the write now.
+    status_t status = spi_master_transfer(&g_imu->spi_ctrl, pBuffer, NULL, len);
+
+    // Release nWAKE after the transfer completes.
+    gpio_set_output(&g_imu->gpio_ps0, 1);
+    g_ps0_asserted = false;
+
+    return (status == kStatus_Success) ? len : 0;
+}
+
+// Internal event callback to detect reset-complete during init
+static void hal_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
+    if (pEvent->eventId == SH2_RESET) {
+        g_reset_occurred = true;
+    }
+}
+
+status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback)
 {
     status_t spi_status;
-    gpio_ctrl_t gpio_event ={
+    gpio_ctrl_t gpio_event = {
         .gpio_base = GPIO1,
         .port_base = PORT1,
         .dir = gpio_input,
@@ -77,10 +104,16 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, 
         .pin = 16
     };
 
+    gpio_ctrl_t gpio_ps0 = {
+        .gpio_base = GPIO1,
+        .port_base = PORT1,
+        .dir = gpio_output,
+        .pin = 18
+    };
 
     imu->gpio_event = gpio_event;
     imu->gpio_reset = gpio_reset;
-
+    imu->gpio_ps0 = gpio_ps0;
 
     NVIC_SetPriority(GPIO10_IRQn, 5);
     NVIC_SetPriority(GPIO11_IRQn, 5);
@@ -88,6 +121,9 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, 
 #ifdef MCXN947
     spi_get_defaultconfig_imu(&imu->spi_ctrl, spi_callback);
     imu->spi_ctrl.enable_dma = false;
+    // Explicitly set SPI Mode 3 (CPOL=1, CPHA=1) for BNO085
+    imu->spi_ctrl.cpol = IMU_SPI_MASTER_CPOL;
+    imu->spi_ctrl.cpha = IMU_SPI_MASTER_CPHA;
 #endif
 
     g_imu = imu; // Store in global for hal_read access
@@ -97,32 +133,52 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, 
         return spi_status;
     }
 
-    //SDK_DelayAtLeastUs(10000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 10ms delay for reset
+    // Hardware reset: pull RSTN low, wait, release
     gpio_init(&imu->gpio_reset);
+    gpio_init(&imu->gpio_event);
+    gpio_init(&imu->gpio_ps0);
+    gpio_set_output(&imu->gpio_ps0, 1);
     gpio_set_output(&imu->gpio_reset, 0);
-    SDK_DelayAtLeastUs(10000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 10ms delay for reset
+    SDK_DelayAtLeastUs(10000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 10ms reset pulse
     gpio_set_output(&imu->gpio_reset, 1);
 
-    gpio_init(&imu->gpio_event);
+    // gpio_set_output(&imu->gpio_ps0, 0);
+
+    // while(gpio_read_input(&imu->gpio_event) != 0) {
+    //     // Wait for HINT to go low, indicating the BNO085 is ready to communicate
+    // }
+
+    // gpio_set_output(&imu->gpio_ps0, 1); // Wake the sensor up (PS0 high)
+
     gpio_attach_interrupt(&imu->gpio_event, gpio_callback);
 
-
-    // Mount the HAL to the CEVA Library
+    // Mount the HAL to the CEVA Library (but do NOT open yet —
+    // sh2_open has a blocking poll loop that requires working timestamps,
+    // so it must be called after the FreeRTOS scheduler starts).
     sh2_hal.open = hal_open;
     sh2_hal.close = hal_close;
     sh2_hal.read = hal_read;
     sh2_hal.write = hal_write;
     sh2_hal.getTimeUs = hal_getTimeUs;
 
-    // Open the SHTP session
-    if (sh2_open(&sh2_hal, NULL, NULL) != SH2_OK) {
+    return spi_status;
+}
+
+status_t bno_08x_start(sh2_SensorCallback_t sh2_callback)
+{
+    // Must be called from a FreeRTOS task context (scheduler running)
+    // so that hal_getTimeUs works and the sh2_open timeout is functional.
+    if (sh2_open(&sh2_hal, hal_event_callback, NULL) != SH2_OK) {
         PRINTF("Failed to open SH2 session\r\n");
         return kStatus_Fail;
     }
 
-    // Register your sensor data callback
     sh2_setSensorCallback(sh2_callback, NULL);
+    return kStatus_Success;
+}
 
+status_t bno_08x_configure_sensors(void)
+{
     // Request the Rotation Vector (Quaternions) at 100Hz
     sh2_SensorConfig_t config = {0};
     config.changeSensitivityEnabled = false;
@@ -134,9 +190,24 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, 
     config.sensorSpecific = 0;
     config.reportInterval_us = 10000; // 10ms = 100Hz
 
-    sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config);
+    
+    PRINTF("Calling sh2_setSensorConfig, resetComplete state unknown\r\n");
 
-    return spi_status;
+    int status = sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config);
+    if (status != SH2_OK) {
+        PRINTF("Failed to configure rotation vector sensor: %d\r\n", status);
+        return kStatus_Fail;
+    }
+    PRINTF("Rotation vector sensor configured at 100Hz\r\n");
+    return kStatus_Success;
+}
 
+bool bno_08x_reset_occurred(void)
+{
+    if (g_reset_occurred) {
+        g_reset_occurred = false;
+        return true;
+    }
+    return false;
 }
 

@@ -21,7 +21,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#define SH2_HAL_MAX_TRANSFER_IN_APP 512 // Max packet size for BNO085 is 128 bytes
+#define SH2_HAL_MAX_TRANSFER_IN_APP 512 // Max packet size for BNO085 is 512 bytes
 #define SH2_HAL_MAX_TRANSFER_OUT_APP 128 // Max packet size for BNO085 is 128 bytes
 
 typedef struct imu_ctrl_s
@@ -29,9 +29,14 @@ typedef struct imu_ctrl_s
     spi_ctrl_t spi_ctrl;
     gpio_ctrl_t gpio_event;
     gpio_ctrl_t gpio_reset;
+    gpio_ctrl_t gpio_ps0;
 
 } imu_ctrl_t;
 
-status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback, sh2_SensorCallback_t sh2_callback);
+status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback);
+status_t bno_08x_start(sh2_SensorCallback_t sh2_callback);
+status_t bno_08x_configure_sensors(void);
+bool bno_08x_reset_occurred(void);
+status_t bno_08x_tare(void);
 
 #endif /* BNO_08X_H_ */

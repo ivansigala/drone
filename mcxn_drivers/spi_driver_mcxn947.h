@@ -11,7 +11,7 @@
 #include "fsl_lpspi.h"
 #include "fsl_lpspi_edma.h"
 
-#define IMU_SPI_TRANSFER_BAUDRATE           4000000U  /* 3 MHz */
+#define IMU_SPI_TRANSFER_BAUDRATE           2000000U  /* 3 MHz */
 #define IMU_SPI_MASTER_BASEADDR             (LPSPI3)
 #define IMU_SPI_MASTER_INSTANCE             (LPSPI_GetInstance(IMU_SPI_MASTER_BASEADDR))
 #define IMU_SPI_MASTER_CLK_FREQ             CLOCK_GetLPFlexCommClkFreq(IMU_SPI_MASTER_INSTANCE)

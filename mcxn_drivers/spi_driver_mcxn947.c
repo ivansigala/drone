@@ -27,7 +27,7 @@ void spi_get_defaultconfig_imu(spi_ctrl_t *imu, void* callback){
     imu->edma_tx_channel  = IMU_SPI_TRANSMIT_EDMA_CHANNEL;
     imu->dma_callback     = (lpspi_master_edma_transfer_callback_t)callback;
     imu->spi_callback     = (lpspi_master_transfer_callback_t)callback;
-    imu->enable_dma = true;
+    imu->enable_dma = false;
 
 }
 
@@ -69,7 +69,7 @@ status_t spi_init(spi_ctrl_t *ctrl){
                         NULL, &(g_lpspiRxEdmaHandles[ctrl->instance]),
                         &(g_lpspiTxEdmaHandles[ctrl->instance]));
 
-    return LPSPI_MasterTransferPrepareEDMALite(ctrl->spi_base, &(g_spi_edma_handles[ctrl->instance]), IMU_SPI_MASTER_PCS_FOR_TRANSFER | kLPSPI_MasterByteSwap | kLPSPI_MasterPcsContinuous);
+    return LPSPI_MasterTransferPrepareEDMALite(ctrl->spi_base, &(g_spi_edma_handles[ctrl->instance]), IMU_SPI_MASTER_PCS_FOR_TRANSFER | kLPSPI_MasterByteSwap);
 
 }
 
@@ -81,6 +81,7 @@ status_t spi_master_transfer(spi_ctrl_t *ctrl, uint8_t *txData, uint8_t *rxData,
     masterXfer.txData   = txData;
     masterXfer.rxData   = rxData;
     masterXfer.dataSize = dataSize;
+
     masterXfer.configFlags = ctrl->pcs_for_transfer | kLPSPI_MasterByteSwap | kLPSPI_MasterPcsContinuous;
 
     if(ctrl->enable_dma == false){

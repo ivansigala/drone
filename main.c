@@ -61,16 +61,24 @@ void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
     sh2_SensorValue_t sensorValue;
 
     if (sh2_decodeSensorEvent(&sensorValue, event) == SH2_OK) {
-        
-        // Note: The decoded struct uses 'sensorId' instead of 'reportId'
+
         if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
-            
+
             sh2_RotationVectorWAcc_t *rv = &sensorValue.un.rotationVector;
-            
-            PRINTF("Q: i:%.2f j:%.2f k:%.2f r:%.2f\r\n", rv->i, rv->j, rv->k, rv->real);
+
+            float roll, pitch, yaw;
+            q_to_ypr(rv->real, rv->i, rv->j, rv->k, &yaw, &pitch, &roll);
+
+            // Convert radians to degrees
+            float rad2deg = 180.0f / 3.14159265f;
+            PRINTF("Roll: %6.1f  Pitch: %6.1f  Yaw: %6.1f (deg)\r\n",
+                   roll  * rad2deg,
+                   pitch * rad2deg,
+                   yaw   * rad2deg);
         }
     }
 }
+
 /*!
  * @brief Application entry point.
  */
@@ -79,7 +87,7 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitHardware();
 
-    if (xTaskCreate(SensorTask , "Sensor_task", configMINIMAL_STACK_SIZE + 100, NULL, sensor_task_PRIORITY, &sensorTaskHandle) !=
+    if (xTaskCreate(SensorTask , "Sensor_task", 1024, NULL, sensor_task_PRIORITY, &sensorTaskHandle) !=
         pdPASS)
     {
         PRINTF("Task creation failed!.\r\n");
@@ -87,7 +95,9 @@ int main(void)
             ;
     }
 
-    bno_08x_init(&imu, NULL, IMU_Update_Callback, sh2_sensor_callback);
+    PRINTF("Initializing BNO085 IMU...\r\n");
+
+    bno_08x_init(&imu, NULL, IMU_Update_Callback);
 
     vTaskStartScheduler();
     for (;;)
@@ -95,19 +105,53 @@ int main(void)
 }
 
 /*!
- * @brief Task responsible for procesing the IMU data.
+ * @brief Task responsible for processing the IMU data.
+ *
+ * After each HINT interrupt, we call sh2_service() in a loop until HINT goes
+ * high.  The CEVA library may need multiple read/write cycles per interrupt
+ * (e.g. reading an advertisement, then sending a command in response).
+ * Sensor configuration is deferred until the BNO085 signals SH2_RESET.
  */
 static void SensorTask(void *pvParameters)
-{   
+{
+    static bool sensors_configured = false;
+    status_t result;
 
-    //sh2_service();
+    // Open the SH2 session here, inside a task context, so that
+    // hal_getTimeUs() works (it needs the FreeRTOS scheduler running).
+    // sh2_open() has a blocking poll loop with a 200ms timeout that
+    // reads the BNO085 boot packets and waits for reset-complete.
+    result = bno_08x_start(sh2_sensor_callback);
+    if (result != kStatus_Success) {
+        PRINTF("BNO085 SH2 session failed to open\r\n");
+        vTaskSuspend(NULL);
+    }
+
+    PRINTF("bno_08x_start returned %d\r\n", result);  // should be 0
+
+    // In bno_08x_configure_sensors, before sh2_setSensorConfig:
+    PRINTF("Calling sh2_setSensorConfig, resetComplete state unknown\r\n");
 
     for (;;)
     {
-        // Block indefinitely until the IMU_Update_Callback fires the notification
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        
-        sh2_service();
+        // Block until HINT falling edge fires the notification.
+        // Use a timeout so we can also poll for reset events periodically.
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
 
+        // Service the SH2 library repeatedly while HINT is asserted.
+        // Each sh2_service() call processes one SHTP packet.
+        // Loop until HINT goes high (no more data from BNO085).
+        do {
+            sh2_service();
+        } while (GPIO_PinRead(imu.gpio_event.gpio_base, imu.gpio_event.pin) == 0);
+
+        // Once the BNO085 signals reset-complete, configure sensors
+        if (!sensors_configured && bno_08x_reset_occurred()) {
+            PRINTF("BNO085 reset complete, configuring sensors...\r\n");
+            bno_08x_configure_sensors();
+            vTaskDelay(pdMS_TO_TICKS(200)); // let a few reports arrive first
+            bno_08x_tare();
+            sensors_configured = true;
+        }
     }
 }

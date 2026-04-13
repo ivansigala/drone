@@ -31,6 +31,7 @@ mcux_add_source(
 
 mcux_add_macro(
     "MCXN947=1"
+    CC "-DPRINTF_FLOAT_ENABLE=1"
 )
 
 
