@@ -116,12 +116,11 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback)
     imu->gpio_ps0 = gpio_ps0;
 
     NVIC_SetPriority(GPIO10_IRQn, 5);
-    NVIC_SetPriority(GPIO11_IRQn, 5);
+    NVIC_SetPriority(EDMA_0_CH7_IRQn, 5);
+    NVIC_SetPriority(EDMA_0_CH8_IRQn, 5);
 
 #ifdef MCXN947
     spi_get_defaultconfig_imu(&imu->spi_ctrl, spi_callback);
-    imu->spi_ctrl.enable_dma = false;
-    // Explicitly set SPI Mode 3 (CPOL=1, CPHA=1) for BNO085
     imu->spi_ctrl.cpol = IMU_SPI_MASTER_CPOL;
     imu->spi_ctrl.cpha = IMU_SPI_MASTER_CPHA;
 #endif
@@ -141,15 +140,7 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback)
     gpio_set_output(&imu->gpio_reset, 0);
     SDK_DelayAtLeastUs(10000, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY); // 10ms reset pulse
     gpio_set_output(&imu->gpio_reset, 1);
-
-    // gpio_set_output(&imu->gpio_ps0, 0);
-
-    // while(gpio_read_input(&imu->gpio_event) != 0) {
-    //     // Wait for HINT to go low, indicating the BNO085 is ready to communicate
-    // }
-
-    // gpio_set_output(&imu->gpio_ps0, 1); // Wake the sensor up (PS0 high)
-
+    
     gpio_attach_interrupt(&imu->gpio_event, gpio_callback);
 
     // Mount the HAL to the CEVA Library (but do NOT open yet —
@@ -177,31 +168,6 @@ status_t bno_08x_start(sh2_SensorCallback_t sh2_callback)
     return kStatus_Success;
 }
 
-status_t bno_08x_configure_sensors(void)
-{
-    // Request the Rotation Vector (Quaternions) at 100Hz
-    sh2_SensorConfig_t config = {0};
-    config.changeSensitivityEnabled = false;
-    config.wakeupEnabled = false;
-    config.changeSensitivityRelative = false;
-    config.alwaysOnEnabled = false;
-    config.changeSensitivity = 0;
-    config.batchInterval_us = 0;
-    config.sensorSpecific = 0;
-    config.reportInterval_us = 10000; // 10ms = 100Hz
-
-    
-    PRINTF("Calling sh2_setSensorConfig, resetComplete state unknown\r\n");
-
-    int status = sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config);
-    if (status != SH2_OK) {
-        PRINTF("Failed to configure rotation vector sensor: %d\r\n", status);
-        return kStatus_Fail;
-    }
-    PRINTF("Rotation vector sensor configured at 100Hz\r\n");
-    return kStatus_Success;
-}
-
 bool bno_08x_reset_occurred(void)
 {
     if (g_reset_occurred) {
@@ -211,3 +177,29 @@ bool bno_08x_reset_occurred(void)
     return false;
 }
 
+status_t bno_08x_configure_sensors(void)
+{
+    sh2_SensorConfig_t config = {0};
+    config.changeSensitivityEnabled  = false;
+    config.wakeupEnabled             = false;
+    config.changeSensitivityRelative = false;
+    config.alwaysOnEnabled           = false;
+    config.changeSensitivity         = 0;
+    config.batchInterval_us          = 0;
+    config.sensorSpecific            = 0;
+
+    config.reportInterval_us = 10000; // 100 Hz
+    if (sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config) != SH2_OK) {
+        PRINTF("Failed to configure rotation vector\r\n");
+        return kStatus_Fail;
+    }
+
+    config.reportInterval_us = 10000; // 100 Hz
+    if (sh2_setSensorConfig(SH2_LINEAR_ACCELERATION, &config) != SH2_OK) {
+        PRINTF("Failed to configure linear acceleration\r\n");
+        return kStatus_Fail;
+    }
+
+    PRINTF("Sensors configured at 100Hz\r\n");
+    return kStatus_Success;
+}

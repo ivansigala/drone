@@ -43,7 +43,6 @@ TaskHandle_t sensorTaskHandle = NULL;
  * Code
  ******************************************************************************/
 
-
 void IMU_Update_Callback(void)
 {   
     gpio_clear_interrupt_flag(imu.gpio_event.gpio_base, imu.gpio_event.pin);
@@ -71,10 +70,19 @@ void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
 
             // Convert radians to degrees
             float rad2deg = 180.0f / 3.14159265f;
-            PRINTF("Roll: %6.1f  Pitch: %6.1f  Yaw: %6.1f (deg)\r\n",
-                   roll  * rad2deg,
-                   pitch * rad2deg,
-                   yaw   * rad2deg);
+
+            roll = roll * rad2deg;
+            pitch = pitch * rad2deg;
+            yaw = yaw * rad2deg;
+            PRINTF("Yaw=%.2f, Pitch=%.2f, Roll=%.2f\r\n", yaw, pitch, roll);
+
+        }
+
+        if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
+
+            //sh2_Accelerometer_t *accel_data = &sensorValue.un.linearAcceleration;
+
+        
         }
     }
 }
@@ -143,7 +151,7 @@ static void SensorTask(void *pvParameters)
         // Loop until HINT goes high (no more data from BNO085).
         do {
             sh2_service();
-        } while (GPIO_PinRead(imu.gpio_event.gpio_base, imu.gpio_event.pin) == 0);
+        } while (gpio_read_input(&imu.gpio_event) == 0);
 
         // Once the BNO085 signals reset-complete, configure sensors
         if (!sensors_configured && bno_08x_reset_occurred()) {

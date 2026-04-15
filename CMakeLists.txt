@@ -20,6 +20,7 @@ mcux_add_source(
     SOURCES main.c
             sensors/mpu_9250/mpu_9250.c
             sensors/bno_08x/bno_08x.c
+            sensors/bme280/bme280.c
             mcxn_drivers/spi_driver_mcxn947.c
             mcxn_drivers/gpio_driver_mcxn947.c
             sensors/bno_08x/sht_lib/euler.c
@@ -38,6 +39,7 @@ mcux_add_macro(
 mcux_add_include(
     INCLUDES .
             mcxn_drivers/
+            sensors/bme280/
             sensors/mpu_9250/
             sensors/bno_08x/
             sensors/bno_08x/sht_lib/

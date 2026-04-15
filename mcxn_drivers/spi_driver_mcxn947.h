@@ -11,7 +11,11 @@
 #include "fsl_lpspi.h"
 #include "fsl_lpspi_edma.h"
 
-#define IMU_SPI_TRANSFER_BAUDRATE           2000000U  /* 3 MHz */
+/* FreeRTOS — needed for the DMA completion semaphore */
+#include "FreeRTOS.h"
+#include "semphr.h"
+
+#define IMU_SPI_TRANSFER_BAUDRATE           2000000U  /* 2 MHz */
 #define IMU_SPI_MASTER_BASEADDR             (LPSPI3)
 #define IMU_SPI_MASTER_INSTANCE             (LPSPI_GetInstance(IMU_SPI_MASTER_BASEADDR))
 #define IMU_SPI_MASTER_CLK_FREQ             CLOCK_GetLPFlexCommClkFreq(IMU_SPI_MASTER_INSTANCE)
@@ -44,6 +48,10 @@ typedef struct spi_ctrl_s{
     dma_request_source_t edma_rx_channel;
     dma_request_source_t edma_tx_channel;
     bool enable_dma;
+    /* Binary semaphore signalled by the DMA completion ISR so that
+     * spi_master_transfer() can block the calling task instead of busy-waiting.
+     * Created in spi_init() when enable_dma == true.                          */
+    SemaphoreHandle_t dma_semaphore;
 }spi_ctrl_t;
 
 /*!
