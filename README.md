@@ -68,7 +68,7 @@ graph TB
 |-----------|------|-----|-----|-----------|----------|
 | **SDO** | LP_SPI3 | 1 | 12 | Output | Data output |
 | **SCL** | LPSPI3 | 1 | 13 | Output | Clock |
-| **SDI** | LPSPI3 | 1 | 14 | Input | Data input |
+| **SDI** | LPSPI3 | 1 | 14 | Input | Data input |  
 | **CS** | LPSPI3 | 1 | 15 | Output | Enable |
 | **HINT** | GPIO1 | 1 | 17 | Input | Data Ready Interrupt |
 | **RESET** | GPIO1 | 1 | 16 | Output | Sensor Reset |
@@ -354,11 +354,11 @@ sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config);
 
 ## References
 
-- **BNO085 Datasheet**: [text](https://www.alldatasheet.es/datasheet-pdf/download/1756554/ETC/BNO08X.html)
-- **SHTP Protocol**: [text](https://cdn.sparkfun.com/assets/7/6/9/3/c/Sensor-Hub-Transport-Protocol-v1.7.pdf)
-- **CEVA SH2 Library**: [text](https://github.com/ceva-dsp/sh2)
-- **MCXN947 Reference Manual**: [text](https://www.nxp.com/design/design-center/development-boards-and-designs/FRDM-MCXN947#buy)
-- **FreeRTOS Documentation**:[text]https://www.freertos.org/
+- **BNO085 Datasheet**: [CEVA hillcrestlabs bno08x](https://www.alldatasheet.es/datasheet-pdf/download/1756554/ETC/BNO08X.html)
+- **SHTP Protocol**: [Hillcrestlabs SHTP](https://cdn.sparkfun.com/assets/7/6/9/3/c/Sensor-Hub-Transport-Protocol-v1.7.pdf)
+- **CEVA SH2 Library**: [Github repo link](https://github.com/ceva-dsp/sh2)
+- **MCXN947 Reference Manual**: [MCXN947 offical NXP page](https://www.nxp.com/design/design-center/development-boards-and-designs/FRDM-MCXN947#buy)
+- **FreeRTOS Documentation**:[Offical freeRTOS web page](https://www.freertos.org/)
 
 ---
 
