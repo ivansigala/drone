@@ -64,15 +64,14 @@ graph TB
 
 ### Pin Configuration
 
-| Component | Port | Pin | Direction | Function |
-|-----------|------|-----|-----------|----------|
-| **SDI** | LP_SPI3 | - | - | Clock & Data |
-| **SD0** | LPSPI3 | - | - | Clock & Data |
-| **SCL** | LPSPI3 | - | - | Clock & Data |
-| **CS** | LPSPI3 | - | - | Clock & Data |
-| **HINT** | GPIO1 | 17 | Input | Data Ready Interrupt |
-| **RESET** | GPIO1 | 16 | Output | Sensor Reset |
-| **Debug UART** | UART0 | - | Output | Serial Console |
+| Component | Base | Port | Pin | Direction | Function |
+|-----------|------|-----|-----|-----------|----------|
+| **SDO** | LP_SPI3 | 1 | 12 | Data output |
+| **SCL** | LPSPI3 | 1 | 13 | Clock |
+| **SDI** | LPSPI3 | 1 | 14 | Data input |
+| **CS** | LPSPI3 | 1 | 15 | Enable |
+| **HINT** | GPIO1 | 1 | 17 | Input | Data Ready Interrupt |
+| **RESET** | GPIO1 | 1 | 16 | Output | Sensor Reset |
 
 ### Block Diagram
 
@@ -287,73 +286,11 @@ void GPIO11_IRQHandler(void) {
 ## Building the Project
 
 ### Prerequisites
-- NXP MCUXpresso development environment or CMake with Ninja
+- NXP MCUXpresso development environment
 - ARM GCC toolchain
 - FreeRTOS kernel source
 - CEVA SH2 library source
 - NXP MCUXsdk installed
-
-### Build Steps
-
-#### Using CMake (Recommended)
-
-```bash
-# Navigate to project root
-cd frdmmcxn947_freertos_imu
-
-# Configure (creates debug/ build folder)
-cmake --preset debug
-
-# Build all targets
-cmake --build ./debug --config Debug
-```
-
-#### Using VS Code Tasks
-
-1. Press `Ctrl+Shift+B` to open the build task
-2. Select "CMake: build"
-3. Build will complete and generate `freertos_hello_cm33_core0.elf`
-
-### Build Output
-- **Executable**: `debug/freertos_hello_cm33_core0.elf`
-- **Map File**: Contains symbol information for debugging
-- **Compile Commands**: `debug/compile_commands.json` for IDE integration
-
----
-
-## Running the Application
-
-### 1. Flash to Device
-```bash
-# Using J-Link (configured in debug settings)
-# Connect FRDM-MCXN947 via USB
-
-# Option A: Via VS Code Debug
-- Press F5 or click "Run and Debug"
-- Select "SEGGER: Debug" configuration
-
-# Option B: Manual command-line
-jlink -CommanderScript JLink_freertos_hello_cm33_core0.jlink
-```
-
-### 2. Monitor Output
-```bash
-# Open serial terminal at 115200 baud
-# Linux/Mac:
-screen /dev/ttyUSB0 115200
-
-# Windows:
-# Use PuTTY or VS Code terminal at COM port
-```
-
-### 3. Expected Output
-```
-Q: i:0.05 j:-0.12 k:0.85 r:0.51
-Q: i:0.04 j:-0.11 k:0.86 r:0.50
-Q: i:0.06 j:-0.13 k:0.84 r:0.52
-...
-(Updates at 100 Hz - lines appear ~100 times per second)
-```
 
 ---
 
@@ -417,11 +354,11 @@ sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config);
 
 ## References
 
-- **BNO085 Datasheet**: https://www.bosch-sensortec.com/products/sensor-hubs/bnx055-smart-sensor-hub/
-- **SHTP Protocol**: BNO085 Technical Reference Manual
-- **CEVA SH2 Library**: Included in MCUXsdk
-- **MCXN947 Reference Manual**: https://www.nxp.com/products/microcontrollers-microprocessors/mcx/mcx-arm-cortex-m/mcxn947
-- **FreeRTOS Documentation**: https://www.freertos.org/
+- **BNO085 Datasheet**: [text](https://www.alldatasheet.es/datasheet-pdf/download/1756554/ETC/BNO08X.html)
+- **SHTP Protocol**: [text](https://cdn.sparkfun.com/assets/7/6/9/3/c/Sensor-Hub-Transport-Protocol-v1.7.pdf)
+- **CEVA SH2 Library**: [text](https://github.com/ceva-dsp/sh2)
+- **MCXN947 Reference Manual**: [text](https://www.nxp.com/design/design-center/development-boards-and-designs/FRDM-MCXN947#buy)
+- **FreeRTOS Documentation**:[text]https://www.freertos.org/
 
 ---
 
