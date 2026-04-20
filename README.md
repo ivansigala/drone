@@ -66,10 +66,10 @@ graph TB
 
 | Component | Base | Port | Pin | Direction | Function |
 |-----------|------|-----|-----|-----------|----------|
-| **SDO** | LP_SPI3 | 1 | 12 | Data output |
-| **SCL** | LPSPI3 | 1 | 13 | Clock |
-| **SDI** | LPSPI3 | 1 | 14 | Data input |
-| **CS** | LPSPI3 | 1 | 15 | Enable |
+| **SDO** | LP_SPI3 | 1 | 12 | Output | Data output |
+| **SCL** | LPSPI3 | 1 | 13 | Output | Clock |
+| **SDI** | LPSPI3 | 1 | 14 | Input | Data input |
+| **CS** | LPSPI3 | 1 | 15 | Output | Enable |
 | **HINT** | GPIO1 | 1 | 17 | Input | Data Ready Interrupt |
 | **RESET** | GPIO1 | 1 | 16 | Output | Sensor Reset |
 
