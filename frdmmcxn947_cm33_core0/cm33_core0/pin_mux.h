@@ -38,6 +38,11 @@ void BOARD_InitBootPins(void);
 void BOARD_InitPins(void);
 
 /*!
+ * @brief Cofigures LPSPI2 pins
+ */
+void LPSPI2_InitPins(void);
+
+/*!
  * @brief Cofigures LPSPI3 pins
  */
 void LPSPI3_InitPins(void);

@@ -66,7 +66,10 @@ graph TB
 
 | Component | Port | Pin | Direction | Function |
 |-----------|------|-----|-----------|----------|
-| **SPI MASTER** | SPI0 | - | - | Clock & Data |
+| **SDI** | LP_SPI3 | - | - | Clock & Data |
+| **SD0** | LPSPI3 | - | - | Clock & Data |
+| **SCL** | LPSPI3 | - | - | Clock & Data |
+| **CS** | LPSPI3 | - | - | Clock & Data |
 | **HINT** | GPIO1 | 17 | Input | Data Ready Interrupt |
 | **RESET** | GPIO1 | 16 | Output | Sensor Reset |
 | **Debug UART** | UART0 | - | Output | Serial Console |
@@ -405,8 +408,8 @@ sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config);
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Clock | 1 MHz | Configurable in `spi_get_defaultconfig_imu()` |
-| Mode | SPI Mode 0 | CPOL=0, CPHA=0 |
+| Clock | 2 MHz | Configurable in `spi_get_defaultconfig_imu()` |
+| Mode | SPI Mode 0 | CPOL=1, CPHA=1 |
 | Data Width | 8-bit | Standard SPI frame |
 | DMA Support | Optional | Enabled by default in config |
 

@@ -26,6 +26,9 @@ void BOARD_InitHardware(void)
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom3Clk, 1u);
     CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM3);
 
+    CLOCK_SetClkDiv(kCLOCK_DivFlexcom2Clk, 1u);
+    CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM2);
+
     CLOCK_EnableClock(kCLOCK_Dma0);
 
     BOARD_InitBootPins();

@@ -14,8 +14,8 @@
 typedef struct bme280_calib_data_s
 {
     uint16_t dig_T1;
-    int16_t dig_T2;
-    int16_t dig_T3;
+    int16_t  dig_T2;
+    int16_t  dig_T3;
     uint16_t dig_P1;
     int16_t dig_P2;
     int16_t dig_P3;
@@ -34,11 +34,23 @@ typedef struct bme280_calib_data_s
 
 } bme280_calib_data_t;
 
+typedef struct bme280_data_s
+{
+    int32_t temperature;
+    int64_t pressure;
+    float humidity;
+} bme280_data_t;
+
 typedef struct bme280_ctrl_s
 {
     spi_ctrl_t spi_ctrl;
+    bme280_data_t data;
+    bme280_calib_data_t cal_data;
 
 } bme280_ctrl_t;
+
+status_t bme280_init(bme280_ctrl_t *bme_ctl, void* spi_callback);
+
 
 
 

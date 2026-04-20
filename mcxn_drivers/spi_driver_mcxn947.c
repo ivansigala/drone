@@ -57,13 +57,33 @@ void spi_get_defaultconfig_imu(spi_ctrl_t *imu, void* callback){
     imu->spi_callback     = (lpspi_master_transfer_callback_t)callback;
     imu->cpol             = IMU_SPI_MASTER_CPOL;
     imu->cpha             = IMU_SPI_MASTER_CPHA;
+    imu->source_clock     = IMU_SPI_MASTER_CLK_FREQ;
     imu->enable_dma = true;   // use eDMA transfers; semaphore created in spi_init()
+
+}
+
+void spi_get_defaultconfig_bar(spi_ctrl_t *bar, void* callback){
+
+    bar->spi_base = BME_SPI_MASTER_BASEADDR;
+    bar->dma_base = BME_SPI_MASTER_DMA_BASE;
+    bar->dma_rx_channel = BME_SPI_MASTER_DMA_RX_CHANNEL;
+    bar->dma_tx_channel = BME_SPI_MASTER_DMA_TX_CHANNEL;
+    bar->baudrate_u32   = BME_SPI_TRANSFER_BAUDRATE;
+    bar->instance       = BME_SPI_MASTER_INSTANCE;
+    bar->pcs_for_init   = BME_SPI_MASTER_PCS_FOR_INIT;
+    bar->edma_rx_channel  = BME_SPI_RECEIVE_EDMA_CHANNEL;
+    bar->edma_tx_channel  = BME_SPI_TRANSMIT_EDMA_CHANNEL;
+    bar->dma_callback     = (lpspi_master_edma_transfer_callback_t)callback;
+    bar->spi_callback     = (lpspi_master_transfer_callback_t)callback;
+    bar->cpol             = BME_SPI_MASTER_CPOL;
+    bar->cpha             = BME_SPI_MASTER_CPHA;
+    bar->source_clock     = BME_SPI_MASTER_CLK_FREQ;
+    bar->enable_dma = true;   // use eDMA transfers;
 
 }
 
 status_t spi_init(spi_ctrl_t *ctrl){
 
-    uint32_t srcClock_Hz_u32;
     edma_config_t userConfig;
     lpspi_master_config_t masterConfig;
 
@@ -76,8 +96,7 @@ status_t spi_init(spi_ctrl_t *ctrl){
     masterConfig.lastSckToPcsDelayInNanoSec    = 1000000000U / (masterConfig.baudRate * 2U);
     masterConfig.betweenTransferDelayInNanoSec = 1000000000U / (masterConfig.baudRate * 2U);
     
-    srcClock_Hz_u32 = IMU_SPI_MASTER_CLK_FREQ;
-    LPSPI_MasterInit(ctrl->spi_base, &masterConfig, srcClock_Hz_u32);
+    LPSPI_MasterInit(ctrl->spi_base, &masterConfig, ctrl->source_clock);
 
     if(ctrl->enable_dma == false){
         LPSPI_MasterTransferCreateHandle(ctrl->spi_base, &(g_spi_handles[ctrl->instance]), ctrl->spi_callback, NULL);
@@ -90,16 +109,16 @@ status_t spi_init(spi_ctrl_t *ctrl){
     /* Route the LPSPI RX and TX DMA request sources to the chosen eDMA channels.
      * Without this the LPSPI peripheral cannot trigger a DMA transfer.
      * NOTE: if your SDK spells this EDMA4_SetChannelMux, rename accordingly.   */
-    EDMA_SetChannelMux(ctrl->dma_base, IMU_SPI_DMA_RX_CH, ctrl->edma_rx_channel);
-    EDMA_SetChannelMux(ctrl->dma_base, IMU_SPI_DMA_TX_CH, ctrl->edma_tx_channel);
+    EDMA_SetChannelMux(ctrl->dma_base, ctrl->dma_rx_channel, ctrl->edma_rx_channel);
+    EDMA_SetChannelMux(ctrl->dma_base, ctrl->dma_tx_channel, ctrl->edma_tx_channel);
 
     memset(&(g_lpspiRxEdmaHandles[ctrl->instance]), 0, sizeof(g_lpspiRxEdmaHandles[ctrl->instance]));
     memset(&(g_lpspiTxEdmaHandles[ctrl->instance]), 0, sizeof(g_lpspiTxEdmaHandles[ctrl->instance]));
 
     EDMA_CreateHandle(&(g_lpspiRxEdmaHandles[ctrl->instance]), ctrl->dma_base,
-                      IMU_SPI_DMA_RX_CH);
+                      ctrl->dma_rx_channel);
     EDMA_CreateHandle(&(g_lpspiTxEdmaHandles[ctrl->instance]), ctrl->dma_base,
-                      IMU_SPI_DMA_TX_CH);
+                      ctrl->dma_tx_channel);
 
     /* Create the binary semaphore used to signal completion from the DMA ISR.
      * Must be created before the EDMA handle so userData is valid.            */
@@ -122,8 +141,8 @@ status_t spi_init(spi_ctrl_t *ctrl){
      * This MUST match the flag used in the blocking path.                      */
     return LPSPI_MasterTransferPrepareEDMALite(ctrl->spi_base,
                         &(g_spi_edma_handles[ctrl->instance]),
-                        IMU_SPI_MASTER_PCS_FOR_TRANSFER |
-                        kLPSPI_MasterByteSwap           |
+                        ctrl->pcs_for_transfer  |
+                        kLPSPI_MasterByteSwap   |
                         kLPSPI_MasterPcsContinuous);
 
 }

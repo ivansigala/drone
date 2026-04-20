@@ -121,8 +121,6 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback)
 
 #ifdef MCXN947
     spi_get_defaultconfig_imu(&imu->spi_ctrl, spi_callback);
-    imu->spi_ctrl.cpol = IMU_SPI_MASTER_CPOL;
-    imu->spi_ctrl.cpha = IMU_SPI_MASTER_CPHA;
 #endif
 
     g_imu = imu; // Store in global for hal_read access

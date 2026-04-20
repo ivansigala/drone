@@ -107,6 +107,8 @@ int main(void)
 
     bno_08x_init(&imu, NULL, IMU_Update_Callback);
 
+    
+
     vTaskStartScheduler();
     for (;;)
         ;
