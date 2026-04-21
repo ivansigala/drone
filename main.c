@@ -125,7 +125,7 @@ int main(void)
 static void SensorTask(void *pvParameters)
 {
     static bool sensors_configured = false;
-    float temp_C, press_Pa, hum_pct;
+    //float temp_C, press_Pa, hum_pct;
     status_t result;
 
     if (bme280_init(&bme_ctrl) != kStatus_Success)
@@ -157,9 +157,9 @@ static void SensorTask(void *pvParameters)
 
         bme280_parse_data(&bme_ctrl);
 
-        temp_C  = bme_ctrl.data.temperature / 100.0f;
-        press_Pa = bme_ctrl.data.pressure   / 256.0f;
-        hum_pct  = bme_ctrl.data.humidity   / 1024.0f;
+        // temp_C  = bme_ctrl.data.temperature / 100.0f;
+        // press_Pa = bme_ctrl.data.pressure   / 256.0f;
+        // hum_pct  = bme_ctrl.data.humidity   / 1024.0f;
 
         if (!sensors_configured && bno_08x_reset_occurred()) {
             bno_08x_configure_sensors();

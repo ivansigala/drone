@@ -23,6 +23,7 @@ mcux_add_source(
             sensors/bme280/bme280.c
             mcxn_drivers/spi_driver_mcxn947.c
             mcxn_drivers/gpio_driver_mcxn947.c
+            mcxn_drivers/timer_driver_mcxn947.c
             sensors/bno_08x/sht_lib/euler.c
             sensors/bno_08x/sht_lib/sh2_SensorValue.c
             sensors/bno_08x/sht_lib/sh2_util.c
