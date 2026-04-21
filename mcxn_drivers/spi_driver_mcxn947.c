@@ -41,7 +41,7 @@ static void spi_dma_complete_callback(LPSPI_Type *base,
 }
 
 
-void spi_get_defaultconfig_imu(spi_ctrl_t *imu, void* callback){
+void spi_get_defaultconfig_imu(spi_ctrl_t *imu){
 
     imu->spi_base = IMU_SPI_MASTER_BASEADDR;
     imu->dma_base = IMU_SPI_MASTER_DMA_BASE;
@@ -53,16 +53,14 @@ void spi_get_defaultconfig_imu(spi_ctrl_t *imu, void* callback){
     imu->pcs_for_transfer = IMU_SPI_MASTER_PCS_FOR_TRANSFER;
     imu->edma_rx_channel  = IMU_SPI_RECEIVE_EDMA_CHANNEL;
     imu->edma_tx_channel  = IMU_SPI_TRANSMIT_EDMA_CHANNEL;
-    imu->dma_callback     = (lpspi_master_edma_transfer_callback_t)callback;
-    imu->spi_callback     = (lpspi_master_transfer_callback_t)callback;
     imu->cpol             = IMU_SPI_MASTER_CPOL;
     imu->cpha             = IMU_SPI_MASTER_CPHA;
     imu->source_clock     = IMU_SPI_MASTER_CLK_FREQ;
-    imu->enable_dma = true;   // use eDMA transfers; semaphore created in spi_init()
+    imu->enable_dma = true;
 
 }
 
-void spi_get_defaultconfig_bar(spi_ctrl_t *bar, void* callback){
+void spi_get_defaultconfig_bar(spi_ctrl_t *bar){
 
     bar->spi_base = BME_SPI_MASTER_BASEADDR;
     bar->dma_base = BME_SPI_MASTER_DMA_BASE;
@@ -71,14 +69,13 @@ void spi_get_defaultconfig_bar(spi_ctrl_t *bar, void* callback){
     bar->baudrate_u32   = BME_SPI_TRANSFER_BAUDRATE;
     bar->instance       = BME_SPI_MASTER_INSTANCE;
     bar->pcs_for_init   = BME_SPI_MASTER_PCS_FOR_INIT;
+    bar->pcs_for_transfer = BME_SPI_MASTER_PCS_FOR_TRANSFER;
     bar->edma_rx_channel  = BME_SPI_RECEIVE_EDMA_CHANNEL;
     bar->edma_tx_channel  = BME_SPI_TRANSMIT_EDMA_CHANNEL;
-    bar->dma_callback     = (lpspi_master_edma_transfer_callback_t)callback;
-    bar->spi_callback     = (lpspi_master_transfer_callback_t)callback;
     bar->cpol             = BME_SPI_MASTER_CPOL;
     bar->cpha             = BME_SPI_MASTER_CPHA;
     bar->source_clock     = BME_SPI_MASTER_CLK_FREQ;
-    bar->enable_dma = true;   // use eDMA transfers;
+    bar->enable_dma = true;
 
 }
 
@@ -99,12 +96,21 @@ status_t spi_init(spi_ctrl_t *ctrl){
     LPSPI_MasterInit(ctrl->spi_base, &masterConfig, ctrl->source_clock);
 
     if(ctrl->enable_dma == false){
-        LPSPI_MasterTransferCreateHandle(ctrl->spi_base, &(g_spi_handles[ctrl->instance]), ctrl->spi_callback, NULL);
+        /* Blocking path — no DMA, no callback needed (pass NULL). */
+        LPSPI_MasterTransferCreateHandle(ctrl->spi_base, &(g_spi_handles[ctrl->instance]), NULL, NULL);
         return kStatus_Success;
     }
 
-    EDMA_GetDefaultConfig(&userConfig);
-    EDMA_Init(ctrl->dma_base, &userConfig);
+    /* EDMA_Init resets the entire DMA controller — safe on the first call,
+     * destructive on the second (wipes channel MUX and handles already set up
+     * for a previous LPSPI instance).  A static guard ensures it runs once.   */
+    static bool edma_initialized = false;
+    if (!edma_initialized)
+    {
+        EDMA_GetDefaultConfig(&userConfig);
+        EDMA_Init(ctrl->dma_base, &userConfig);
+        edma_initialized = true;
+    }
 
     /* Route the LPSPI RX and TX DMA request sources to the chosen eDMA channels.
      * Without this the LPSPI peripheral cannot trigger a DMA transfer.
@@ -137,13 +143,8 @@ status_t spi_init(spi_ctrl_t *ctrl){
                         &(g_lpspiRxEdmaHandles[ctrl->instance]),
                         &(g_lpspiTxEdmaHandles[ctrl->instance]));
 
-    /* kLPSPI_MasterPcsContinuous keeps CS low for the entire multi-byte packet.
-     * This MUST match the flag used in the blocking path.                      */
-    return LPSPI_MasterTransferPrepareEDMALite(ctrl->spi_base,
-                        &(g_spi_edma_handles[ctrl->instance]),
-                        ctrl->pcs_for_transfer  |
-                        kLPSPI_MasterByteSwap   |
-                        kLPSPI_MasterPcsContinuous);
+    
+    return kStatus_Success;
 
 }
 
@@ -162,13 +163,9 @@ status_t spi_master_transfer(spi_ctrl_t *ctrl, uint8_t *txData, uint8_t *rxData,
         return LPSPI_MasterTransferBlocking(ctrl->spi_base, &masterXfer);
     }
 
-    /* Start the non-blocking DMA transfer, then park the calling task on the
-     * semaphore.  spi_dma_complete_callback() gives the semaphore from the
-     * eDMA IRQ so the task wakes up exactly when the transfer is done.
-     * A 100 ms timeout guards against a lost interrupt or hardware hang.      */
-    status_t status = LPSPI_MasterTransferEDMALite(ctrl->spi_base,
-                                                   &g_spi_edma_handles[ctrl->instance],
-                                                   &masterXfer);
+    status_t status = LPSPI_MasterTransferEDMA(ctrl->spi_base,
+                                               &g_spi_edma_handles[ctrl->instance],
+                                               &masterXfer);
     if (status != kStatus_Success)
     {
         return status;

@@ -87,7 +87,7 @@ static void hal_event_callback(void *cookie, sh2_AsyncEvent_t *pEvent) {
     }
 }
 
-status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback)
+status_t bno_08x_init(imu_ctrl_t *imu, void* gpio_callback)
 {
     status_t spi_status;
     gpio_ctrl_t gpio_event = {
@@ -120,7 +120,7 @@ status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback)
     NVIC_SetPriority(EDMA_0_CH8_IRQn, 5);
 
 #ifdef MCXN947
-    spi_get_defaultconfig_imu(&imu->spi_ctrl, spi_callback);
+    spi_get_defaultconfig_imu(&imu->spi_ctrl);
 #endif
 
     g_imu = imu; // Store in global for hal_read access

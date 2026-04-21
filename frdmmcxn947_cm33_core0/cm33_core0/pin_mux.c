@@ -218,7 +218,7 @@ void LPSPI3_InitPins(void)
 
 void LPSPI2_InitPins(void)
 {
-    /* Enables the clock for PORT1: Enables clock */
+    /* Enables the clock for PORT4: Enables clock */
     CLOCK_EnableClock(kCLOCK_Port4);
 
     /* SDO */
@@ -234,15 +234,15 @@ void LPSPI2_InitPins(void)
                                                      kPORT_OpenDrainDisable,
                                                      /* Low drive strength is configured */
                                                      kPORT_LowDriveStrength,
-                                                     /* Pin is configured as FC3_P0 */
-                                                     kPORT_MuxAlt3,
+                                                     /* Pin is configured as FC2_P0 */
+                                                     kPORT_MuxAlt2,
                                                      /* Digital input enabled */
                                                      kPORT_InputBufferEnable,
                                                      /* Digital input is not inverted */
                                                      kPORT_InputNormal,
                                                      /* Pin Control Register fields [15:0] are not locked */
                                                      kPORT_UnlockRegister};
-    /* PORT1_12 is configured as F3_P0 */
+    /* PORT4_0 is configured as F2_P0 */
     PORT_SetPinConfig(PORT4, 0U, &port4_0_config);
 
     /* SCL */
@@ -258,16 +258,16 @@ void LPSPI2_InitPins(void)
                                                      kPORT_OpenDrainDisable,
                                                      /* Low drive strength is configured */
                                                      kPORT_LowDriveStrength,
-                                                     /* Pin is configured as FC3_P1 */
-                                                     kPORT_MuxAlt3,
+                                                     /* Pin is configured as FC2_P1 */
+                                                     kPORT_MuxAlt2,
                                                      /* Digital input enabled */
                                                      kPORT_InputBufferEnable,
                                                      /* Digital input is not inverted */
                                                      kPORT_InputNormal,
                                                      /* Pin Control Register fields [15:0] are not locked */
                                                      kPORT_UnlockRegister};
-    /* PORT1_13 is configured as F3_P1 */
-    PORT_SetPinConfig(PORT4, 3U, &port4_1_config);
+    /* PORT4_1 is configured as F2_P1 */
+    PORT_SetPinConfig(PORT4, 1U, &port4_1_config);
 
     /* SDI */
     const port_pin_config_t port4_2_config = {/* Internal pull-up resistor is enabled */
@@ -282,15 +282,15 @@ void LPSPI2_InitPins(void)
                                                      kPORT_OpenDrainDisable,
                                                      /* Low drive strength is configured */
                                                      kPORT_LowDriveStrength,
-                                                     /* Pin is configured as FC3_P2 */
-                                                     kPORT_MuxAlt3,
+                                                     /* Pin is configured as FC2_P2 */
+                                                     kPORT_MuxAlt2,
                                                      /* Digital input enabled */
                                                      kPORT_InputBufferEnable,
                                                      /* Digital input is not inverted */
                                                      kPORT_InputNormal,
                                                      /* Pin Control Register fields [15:0] are not locked */
                                                      kPORT_UnlockRegister};
-    /* PORT1_14 is configured as F3_P2 */
+    /* PORT4_2 is configured as F2_P2 */
     PORT_SetPinConfig(PORT4, 2U, &port4_2_config);
 
     /* cs[0] */
@@ -306,15 +306,15 @@ void LPSPI2_InitPins(void)
                                                      kPORT_OpenDrainDisable,
                                                      /* Low drive strength is configured */
                                                      kPORT_LowDriveStrength,
-                                                     /* Pin is configured as FC3_P3 */
-                                                     kPORT_MuxAlt3,
+                                                     /* Pin is configured as FC2_P3 */
+                                                     kPORT_MuxAlt2,
                                                      /* Digital input enabled */
                                                      kPORT_InputBufferEnable,
                                                      /* Digital input is not inverted */
                                                      kPORT_InputNormal,
                                                      /* Pin Control Register fields [15:0] are not locked */
                                                      kPORT_UnlockRegister};
-    /* PORT1_15 is configured as F3_P3 */
+    /* PORT4_3 is configured as F2_P3 */
     PORT_SetPinConfig(PORT4, 3U, &port4_3_config);
 
 }

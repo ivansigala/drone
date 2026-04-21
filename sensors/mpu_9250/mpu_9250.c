@@ -11,7 +11,7 @@ static spi_ctrl_t imu;
 status_t mpu9250_init(void* callback){
 
 #ifdef MCXN947
-    spi_get_defaultconfig_imu(&imu, callback);
+    spi_get_defaultconfig_imu(&imu);
 #endif
 
     return spi_init(&imu);

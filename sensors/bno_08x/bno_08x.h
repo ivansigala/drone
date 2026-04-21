@@ -33,7 +33,7 @@ typedef struct imu_ctrl_s
 
 } imu_ctrl_t;
 
-status_t bno_08x_init(imu_ctrl_t *imu, void* spi_callback, void* gpio_callback);
+status_t bno_08x_init(imu_ctrl_t *imu, void* gpio_callback);
 status_t bno_08x_start(sh2_SensorCallback_t sh2_callback);
 status_t bno_08x_configure_sensors(void);
 bool bno_08x_reset_occurred(void);

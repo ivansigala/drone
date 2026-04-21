@@ -21,6 +21,7 @@
 
 /* User includes */
 #include "bno_08x.h"
+#include "bme280.h"
 #include "euler.h"
 
 /*******************************************************************************
@@ -31,12 +32,14 @@
 /*******************************************************************************
  * Prototypes
  ******************************************************************************/
+
 static void SensorTask(void *pvParameters);
 
 /*******************************************************************************
  * Prototypes
  ******************************************************************************/
 imu_ctrl_t imu;
+bme280_ctrl_t bme_ctrl;
 TaskHandle_t sensorTaskHandle = NULL;
 
 /*******************************************************************************
@@ -74,7 +77,7 @@ void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event) {
             roll = roll * rad2deg;
             pitch = pitch * rad2deg;
             yaw = yaw * rad2deg;
-            PRINTF("Yaw=%.2f, Pitch=%.2f, Roll=%.2f\r\n", yaw, pitch, roll);
+            // PRINTF("Yaw=%.2f, Pitch=%.2f, Roll=%.2f\r\n", yaw, pitch, roll);
 
         }
 
@@ -95,7 +98,7 @@ int main(void)
     /* Init board hardware. */
     BOARD_InitHardware();
 
-    if (xTaskCreate(SensorTask , "Sensor_task", 1024, NULL, sensor_task_PRIORITY, &sensorTaskHandle) !=
+    if (xTaskCreate(SensorTask , "Sensor_task", 2048, NULL, sensor_task_PRIORITY, &sensorTaskHandle) !=
         pdPASS)
     {
         PRINTF("Task creation failed!.\r\n");
@@ -105,10 +108,9 @@ int main(void)
 
     PRINTF("Initializing BNO085 IMU...\r\n");
 
-    bno_08x_init(&imu, NULL, IMU_Update_Callback);
+    bno_08x_init(&imu, IMU_Update_Callback);
 
     
-
     vTaskStartScheduler();
     for (;;)
         ;
@@ -118,29 +120,30 @@ int main(void)
  * @brief Task responsible for processing the IMU data.
  *
  * After each HINT interrupt, we call sh2_service() in a loop until HINT goes
- * high.  The CEVA library may need multiple read/write cycles per interrupt
- * (e.g. reading an advertisement, then sending a command in response).
- * Sensor configuration is deferred until the BNO085 signals SH2_RESET.
+ * high. And read the barometer data over SPI
  */
 static void SensorTask(void *pvParameters)
 {
     static bool sensors_configured = false;
+    float temp_C, press_Pa, hum_pct;
     status_t result;
 
-    // Open the SH2 session here, inside a task context, so that
-    // hal_getTimeUs() works (it needs the FreeRTOS scheduler running).
-    // sh2_open() has a blocking poll loop with a 200ms timeout that
-    // reads the BNO085 boot packets and waits for reset-complete.
+    if (bme280_init(&bme_ctrl) != kStatus_Success)
+    {
+        PRINTF("BME280 SPI init failed\r\n");
+        vTaskSuspend(NULL);
+    }
+    if (bme280_read_calibration(&bme_ctrl) != kStatus_Success)
+    {
+        PRINTF("BME280 calibration read failed\r\n");
+        vTaskSuspend(NULL);
+    }
+
     result = bno_08x_start(sh2_sensor_callback);
     if (result != kStatus_Success) {
         PRINTF("BNO085 SH2 session failed to open\r\n");
         vTaskSuspend(NULL);
     }
-
-    PRINTF("bno_08x_start returned %d\r\n", result);  // should be 0
-
-    // In bno_08x_configure_sensors, before sh2_setSensorConfig:
-    PRINTF("Calling sh2_setSensorConfig, resetComplete state unknown\r\n");
 
     for (;;)
     {
@@ -148,16 +151,17 @@ static void SensorTask(void *pvParameters)
         // Use a timeout so we can also poll for reset events periodically.
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
 
-        // Service the SH2 library repeatedly while HINT is asserted.
-        // Each sh2_service() call processes one SHTP packet.
-        // Loop until HINT goes high (no more data from BNO085).
         do {
             sh2_service();
         } while (gpio_read_input(&imu.gpio_event) == 0);
 
-        // Once the BNO085 signals reset-complete, configure sensors
+        bme280_parse_data(&bme_ctrl);
+
+        temp_C  = bme_ctrl.data.temperature / 100.0f;
+        press_Pa = bme_ctrl.data.pressure   / 256.0f;
+        hum_pct  = bme_ctrl.data.humidity   / 1024.0f;
+
         if (!sensors_configured && bno_08x_reset_occurred()) {
-            PRINTF("BNO085 reset complete, configuring sensors...\r\n");
             bno_08x_configure_sensors();
             vTaskDelay(pdMS_TO_TICKS(200)); // let a few reports arrive first
             bno_08x_tare();

@@ -43,8 +43,9 @@
 #define BME_SPI_TRANSMIT_EDMA_CHANNEL       kDma0RequestMuxLpFlexcomm2Tx
 #define BME_SPI_RECEIVE_EDMA_CHANNEL        kDma0RequestMuxLpFlexcomm2Rx
 
-#define IMU_SPI_DMA_RX_CH 7U
-#define IMU_SPI_DMA_TX_CH 8U
+/* IMU_SPI_DMA_RX_CH / TX_CH removed — spi_init() now reads
+ * ctrl->dma_rx_channel and ctrl->dma_tx_channel from the spi_ctrl_t struct,
+ * so every peripheral gets its own eDMA channels automatically.             */
 
 typedef struct spi_ctrl_s{
     LPSPI_Type    *spi_base;
@@ -58,8 +59,6 @@ typedef struct spi_ctrl_s{
     lpspi_clock_polarity_t cpol;
     lpspi_which_pcs_t pcs_for_init;
     lpspi_which_pcs_t pcs_for_transfer;
-    lpspi_master_transfer_callback_t spi_callback;
-    lpspi_master_edma_transfer_callback_t dma_callback;
     dma_request_source_t edma_rx_channel;
     dma_request_source_t edma_tx_channel;
     bool enable_dma;
@@ -72,16 +71,14 @@ typedef struct spi_ctrl_s{
 /*!
  * @brief Gets the default configuration for the IMU SPI master.
  * @param imu Pointer to a spi_ctrl_t struct that will hold the default configuration.
- * @param callback Pointer to the callback function for SPI transfers.
  */
-void spi_get_defaultconfig_imu(spi_ctrl_t *imu, void* callback);
+void spi_get_defaultconfig_imu(spi_ctrl_t *imu);
 
 /*!
  * @brief Gets the default configuration for the barometer SPI master
  * @param bar Pointer to the spi_ctrl_t structthat will hold the default configuration
- * @param callback Pointer to the callback function for the dma
  */
-void spi_get_defaultconfig_bar(spi_ctrl_t *bar, void* callback);
+void spi_get_defaultconfig_bar(spi_ctrl_t *bar);
 
 /*!
  * @brief General wraper function to initialize the SPI master.

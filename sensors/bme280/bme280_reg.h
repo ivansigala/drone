@@ -25,7 +25,55 @@
 #define ID_REG 0xD0
 
 
-/* Calibration registers */
+/* Calibration registers — burst-read helpers */
+/* Block 1: dig_T1..dig_T3, dig_P1..dig_P9  (24 bytes, all little-endian) */
+#define BME280_CALIB_T_P_START   0x88
+#define BME280_CALIB_T_P_LEN     24U
+
+/* dig_H1 sits alone at 0xA1 (1 byte, unsigned) */
+#define BME280_CALIB_H1_REG      0xA1
+
+/* Block 2: dig_H2..dig_H6  (7 bytes) */
+#define BME280_CALIB_H_START     0xE1
+#define BME280_CALIB_H_LEN       7U
+
+/* Burst read of all six output data registers: press_msb..hum_lsb (8 bytes) */
+#define BME280_DATA_BURST_START  0xF7
+#define BME280_DATA_BURST_LEN    8U
+
+/* SPI read/write bit (bit 7 of the address byte) */
+#define BME280_SPI_RD_MASK       0x80U
+#define BME280_SPI_WR_MASK       0x7FU
+
+/* Chip ID — read from ID_REG (0xD0); used to verify SPI communication */
+#define BME280_CHIP_ID           0x60U
+
+/* Soft-reset command written to RESET_REG (0xE0) */
+#define BME280_SOFT_RESET_CMD    0xB6U
+
+/* Operating modes — bits [1:0] of CTRL_MEAS_REG */
+#define BME280_MODE_SLEEP        0x00U
+#define BME280_MODE_FORCED       0x01U
+#define BME280_MODE_NORMAL       0x03U
+
+/* Oversampling settings for osrs_t, osrs_p, osrs_h */
+#define BME280_OSRS_SKIP         0x00U   /* measurement skipped — output is sentinel */
+#define BME280_OSRS_X1           0x01U
+#define BME280_OSRS_X2           0x02U
+#define BME280_OSRS_X4           0x03U
+#define BME280_OSRS_X8           0x04U
+#define BME280_OSRS_X16          0x05U
+
+/* Default register values used by bme280_init():
+ *   CTRL_HUM  must be written BEFORE CTRL_MEAS for the setting to take effect.
+ *   CTRL_MEAS: osrs_t[7:5] | osrs_p[4:2] | mode[1:0]
+ *   CONFIG   : t_sb[7:5]   | filter[4:2] | spi3w_en[0]
+ *              t_sb=000 (0.5 ms standby), filter=000 (off)                      */
+#define BME280_CTRL_HUM_VAL      ( BME280_OSRS_X1 )                        /* 0x01 */
+#define BME280_CTRL_MEAS_VAL     ( (BME280_OSRS_X1 << 5) | \
+                                   (BME280_OSRS_X1 << 2) | \
+                                    BME280_MODE_NORMAL )                    /* 0x27 */
+#define BME280_CONFIG_VAL        0x00U
 
 
 
