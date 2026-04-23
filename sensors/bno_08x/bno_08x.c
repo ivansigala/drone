@@ -186,17 +186,17 @@ status_t bno_08x_configure_sensors(void)
     config.batchInterval_us          = 0;
     config.sensorSpecific            = 0;
 
-    config.reportInterval_us = 2500; // 400 Hz
+    config.reportInterval_us = 10000; // 100 Hz
     if (sh2_setSensorConfig(SH2_ROTATION_VECTOR, &config) != SH2_OK) {
         PRINTF("Failed to configure rotation vector\r\n");
         return kStatus_Fail;
     }
 
-    config.reportInterval_us = 2500; // 400 Hz
+    config.reportInterval_us = 10000; // 100 Hz
     if (sh2_setSensorConfig(SH2_LINEAR_ACCELERATION, &config) != SH2_OK) {
         PRINTF("Failed to configure linear acceleration\r\n");
         return kStatus_Fail;
     }
-    
+
     return kStatus_Success;
 }

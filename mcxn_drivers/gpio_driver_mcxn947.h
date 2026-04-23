@@ -141,5 +141,11 @@ void gpio_set_output(gpio_ctrl_t *gpio, uint32_t val);
  */
 uint32_t gpio_read_input(gpio_ctrl_t *gpio);
 
+/*!
+ * @brief Toggle output state of a GPIO pin
+ * @param gpio Pointer to gpio_ctrl_t structure
+ */
+void gpio_toggle_output(gpio_ctrl_t *gpio);
+
 
 #endif /* GPIO_DRIVER_MCXN947_H_ */

@@ -18,12 +18,14 @@ include(${SdkRootDirPath}/CMakeLists.txt)
 
 mcux_add_source(
     SOURCES main.c
+            kalman_z/kalman_z.c
             sensors/mpu_9250/mpu_9250.c
             sensors/bno_08x/bno_08x.c
             sensors/bme280/bme280.c
             mcxn_drivers/spi_driver_mcxn947.c
             mcxn_drivers/gpio_driver_mcxn947.c
             mcxn_drivers/timer_driver_mcxn947.c
+            mcxn_drivers/uart_driver_mcxn947.c
             sensors/bno_08x/sht_lib/euler.c
             sensors/bno_08x/sht_lib/sh2_SensorValue.c
             sensors/bno_08x/sht_lib/sh2_util.c
@@ -40,6 +42,7 @@ mcux_add_macro(
 mcux_add_include(
     INCLUDES .
             mcxn_drivers/
+            kalman_z/
             sensors/bme280/
             sensors/mpu_9250/
             sensors/bno_08x/
