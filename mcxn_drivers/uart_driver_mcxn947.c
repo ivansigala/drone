@@ -59,14 +59,6 @@ static uint32_t UART_GetInstance(LPUART_Type *base)
     return 0; // Default/Error
 }
 
-void UART_UserCallback(LPUART_Type *base, lpuart_handle_t *handle, status_t status, void *userData)
-{
-    if (kStatus_LPUART_TxIdle == status)
-    {
-        // TX Finished
-    }
-}
-
 /*******************************************************************************
  * Driver Functions
  ******************************************************************************/
@@ -133,13 +125,22 @@ void uart_init(uart_ctrl_t *ctrl) {
 void uart_read_dma(uart_ctrl_t *ctrl, uint8_t *data, uint32_t size) {
     uint32_t instance = UART_GetInstance(ctrl->uart_base);
     lpuart_transfer_t receiveXfer;
-    
+
     receiveXfer.data = data;
     receiveXfer.dataSize = size;
-    
+
     // Clear flags as per the example
     LPUART_ClearStatusFlags(ctrl->uart_base, kLPUART_RxOverrunFlag | kLPUART_NoiseErrorFlag | kLPUART_FramingErrorFlag | kLPUART_ParityErrorFlag);
     LPUART_ReceiveEDMA(ctrl->uart_base, &g_lpuartEdmaHandles[instance], &receiveXfer);
+}
+
+/* Abort an in-flight EDMA RX transfer. Used by error-recovery paths
+ * (e.g. when the ESC telemetry response never arrives within its
+ * expected window). The caller is responsible for re-arming with
+ * uart_read_dma() when it wants to receive again. */
+void uart_abort_rx_dma(uart_ctrl_t *ctrl) {
+    uint32_t instance = UART_GetInstance(ctrl->uart_base);
+    LPUART_TransferAbortReceiveEDMA(ctrl->uart_base, &g_lpuartEdmaHandles[instance]);
 }
 
 void uart_write(uart_ctrl_t *ctrl, const char* string){
@@ -217,8 +218,11 @@ void LP_FLEXCOMM3_IRQHandler(void){
 }
 
 void LP_FLEXCOMM4_IRQHandler(void){
+	/* LPUART4 is the debug UART managed by debug_uart_mcxn947.c using
+	   register-level TX. Do NOT dispatch to the SDK transactional driver
+	   here -- it would re-enter the same hardware and corrupt our state.
+	   Once debug_uart_init() runs it installs its handler via UART4_HANDLE. */
 	if(UART4_HANDLE != NULL) UART4_HANDLE();
-	UART_HandleIRQ(LPUART4);
 	SDK_ISR_EXIT_BARRIER;
 }
 

@@ -26,4 +26,25 @@ void timer_attach_callback(timer_ctrl_t *timer, void* callback);
 void timer_start(timer_ctrl_t *timer);
 void timer_stop(timer_ctrl_t *timer);
 
+void delay_blocking_us(uint32_t microseconds);
+
+uint32_t get_timer_tick_count(void);
+
+/*!
+ * @brief Microseconds since LPTMR0 started ticking.
+ *
+ *  Resolution = 1000000 / LPTMR0_frequency_hz (e.g. 2500 us at 400 Hz).
+ *  Wraps as a uint32_t at ~71 minutes.
+ */
+uint32_t timer_get_us(void);
+
+/*!
+ * @brief Milliseconds since LPTMR0 started ticking. Wraps at ~49 days.
+ *
+ *  Use this for debug-UART timestamps. Pure integer math; safe to call
+ *  from any context (the underlying tick counter is volatile and the
+ *  per-tick period is set once in timer_init).
+ */
+uint32_t timer_get_ms(void);
+
 #endif /* TIMER_DRIVER_MCXN947_H_ */

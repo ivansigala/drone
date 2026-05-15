@@ -22,14 +22,22 @@ static uart_ctrl_t esc_ctrl;
 status_t dshot_init(dshotSystem_t *sys, void* telemetry_callback_ptr){
 
     dshotTelemetry_t telem = {0};
+    dshotTelemetryStats_t stats = {0};
     dshotControl_t control = { .throttle_u16 = 0, .requestTelemetry_b = false };
     dshotMotor_t *motors[MAX_SUPPORTED_MOTORS] = { &sys->motor0, &sys->motor1, &sys->motor2, &sys->motor3 };
 
     for(int i = 0; i < MAX_SUPPORTED_MOTORS; i++){
         motors[i]->motor_id = i;
+        motors[i]->stats = stats;
         motors[i]->dshot_telemtry = telem;
         motors[i]->dshot_control = control;
     }
+
+    /* Boot un-armed. ESCTelemetryTask flips sys->armed once every motor
+     * has returned at least one CRC-valid telemetry frame. The DSHOT
+     * generator forces zero throttle while !armed.                       */
+    sys->armed     = false;
+    sys->seen_mask = 0U;
 
 #ifdef MCXN947
 
@@ -70,7 +78,7 @@ status_t dshot_init(dshotSystem_t *sys, void* telemetry_callback_ptr){
                    sys->motor3.pwm.submodule_ctrl);
     __enable_irq();
 
-    dshot_startup_sequence(sys);
+    //dshot_startup_sequence(sys);
 
     return kStatus_Success;
 }
@@ -110,9 +118,9 @@ uint16_t dshot_prepare_packet(uint16_t throttle_u16, bool request_telemetry_b) {
 
     uint16_t packet_u16 = 0;
 
-    // 1. Clamp throttle to safe limits (48 is min throttle, 2047 is max)
-    // Values 1-47 are reserved for special ESC commands (like changing 3D direction)
-    if (throttle_u16 < 48 && throttle_u16 != 0) throttle_u16 = 48;
+    // 1. Clamp throttle to safe limits (100 is min throttle, 2047 is max)
+    // Values 1-99 are reserved for special ESC commands (like changing 3D direction)
+    if (throttle_u16 < 80 && throttle_u16 != 0) throttle_u16 = 80;
     if (throttle_u16 > 2047) throttle_u16 = 2047;
 
     // 2. Shift throttle into the top 11 bits
@@ -151,7 +159,7 @@ void dshot_send_frame(dshotMotor_t *motor) {
     dma_buf[17] = 0;
 
     // Target the specific VAL register
-    __disable_irq();
+    //__disable_irq();
     dma_transfer_submit(motor->dma_id,
                             (uint32_t)dma_buf,
                             destAddr_u16,
@@ -159,7 +167,7 @@ void dshot_send_frame(dshotMotor_t *motor) {
                             DSHOT_DMA_BUFFER_SIZE * sizeof(uint16_t));
 
     pwm_set_ldok(&motor->pwm);
-    __enable_irq();
+    //__enable_irq();
 }
 
 
@@ -275,6 +283,43 @@ void dshot_startup_sequence(dshotSystem_t *esc)
 }
 
 
+void esc_uart_flush(void) {
+    /* Read out and discard any byte still in the data register. */
+    while (LPUART_GetStatusFlags(esc_ctrl.uart_base) & kLPUART_RxDataRegFullFlag) {
+        (void)LPUART_ReadByte(esc_ctrl.uart_base);
+    }
+    LPUART_ClearStatusFlags(esc_ctrl.uart_base,
+        kLPUART_RxOverrunFlag | kLPUART_NoiseErrorFlag |
+        kLPUART_FramingErrorFlag | kLPUART_ParityErrorFlag |
+        kLPUART_IdleLineFlag);
+}
+
+status_t esc_uart_abort_rx(void) {
+
+    uart_abort_rx_dma(&esc_ctrl);
+    
+    return kStatus_Success;
+}
+
+
+float dshot_motor_omega_rad_s(const struct dshotMotor_s *motor) {
+    if (motor == NULL) return 0.0f;
+    if (!motor->dshot_telemtry.valid_b) return 0.0f;
+    return dshot_erpm_to_rad_s(motor->dshot_telemtry.erpm_u16);
+}
+
+bool dshot_telemetry_plausible(const dshotTelemetry_t *t) {
+    if (t == NULL) return false;
+    /* Voltage in centivolts: ~0..30.00 V (covers up to a 6S Li-Po with
+     * margin). A reading of exactly 0 is treated as garbage too -- a
+     * powered ESC always reports something.                             */
+    if (t->voltage_cv_u16 == 0U || t->voltage_cv_u16 > 3000U) return false;
+    /* Temperature: ESCs reporting < -20 C or > 150 C are reporting
+     * garbage (or are about to die).                                    */
+    if (t->temperature_u8 < -20 || t->temperature_u8 > 150)   return false;
+    /* eRPM rate-of-change check belongs in the control loop, not here. */
+    return true;
+}
 
 
 uint8_t update_crc8(uint8_t crc, uint8_t crc_seed) {

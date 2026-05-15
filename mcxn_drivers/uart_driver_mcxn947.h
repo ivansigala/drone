@@ -44,6 +44,7 @@ void uart_get_default_esc_config(uart_ctrl_t *ctrl, void* callback_func);
 void uart_init(uart_ctrl_t *ctrl);
 void uart_write(uart_ctrl_t *ctrl, const char* string);
 void uart_read_dma(uart_ctrl_t *ctrl, uint8_t *data, uint32_t size);
+void uart_abort_rx_dma(uart_ctrl_t *ctrl);
 void uart_attach_interrupt(LPUART_Type* uart_base, void* func_ptr);
 
 void UART_HandleIRQ(LPUART_Type* uart_base);

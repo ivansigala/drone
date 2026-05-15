@@ -18,12 +18,16 @@ include(${SdkRootDirPath}/CMakeLists.txt)
 
 mcux_add_source(
     SOURCES main.c
-            dshot.c
-            rc_fsia6B.c
+            drone_drivers/dshot/dshot.c
+            drone_drivers/rc/rc_fsia6B.c
+            drone_drivers/control/dynamics.c
+            drone_drivers/control/pid.c
             mcxn_drivers/dma_driver_mcxn947.c
             mcxn_drivers/timer_driver_mcxn947.c
             mcxn_drivers/pwm_driver_mcxn947.c
             mcxn_drivers/uart_driver_mcxn947.c
+            mcxn_drivers/debug_uart_mcxn947.c
+            mcxn_drivers/gpio_driver_mcxn947.c
 )
 
 mcux_add_macro(
@@ -34,6 +38,9 @@ mcux_add_macro(
 mcux_add_include(
     INCLUDES . 
              mcxn_drivers/
+             drone_drivers/dshot/
+             drone_drivers/rc/
+             drone_drivers/control/
 )
 mcux_convert_binary(BINARY ${APPLICATION_BINARY_DIR}/${MCUX_SDK_PROJECT_NAME}.bin)
 

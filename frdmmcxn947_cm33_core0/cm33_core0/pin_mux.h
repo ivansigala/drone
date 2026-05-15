@@ -39,6 +39,17 @@ void BOARD_InitBootPins(void);
  */
 void BOARD_InitPins(void);
 
+/*!
+ * @brief Configures pin routing for UART1 peripheral.
+ */
+void UART1_InitPins(void);
+
+/*!
+ * @brief Configures pin routing for UART7 peripheral.
+ */
+void UART7_InitPins(void);
+
+
 #if defined(__cplusplus)
 }
 #endif

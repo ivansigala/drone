@@ -66,9 +66,82 @@
 #define MIN_GCR_EDGES                   (7)
 #define MAX_GCR_EDGES                   (22)
 
+/*
+ * eRPM -> mechanical rad/s conversion
+ * -----------------------------------
+ *
+ * On the wire dshotTelemetry_t::erpm_u16 holds  electrical_rpm / 100.
+ * Mechanical RPM = electrical_rpm / pole_pairs, and rad/s = RPM*2*pi/60.
+ * Combined:
+ *
+ *      omega [rad/s] = erpm_u16 * 100 / pole_pairs * (2*pi / 60)
+ *                    = erpm_u16 * (10*pi / 3) / pole_pairs
+ *
+ * Override DSHOT_MOTOR_POLE_PAIRS for your motor (most drone outrunners
+ * in the 2204..2812 class are 7 pole-pair / 14-pole). The conversion
+ * factor is pre-folded into a single float so each call site is one
+ * float multiply.
+ */
+#ifndef DSHOT_MOTOR_POLE_PAIRS
+#define DSHOT_MOTOR_POLE_PAIRS  7
+#endif
+
+#define DSHOT_ERPM_TO_RAD_S \
+    ((100.0f * 2.0f * 3.14159265358979323846f) / \
+     (60.0f * (float)DSHOT_MOTOR_POLE_PAIRS))
+
+/*!
+ * @brief Convert a raw dshotTelemetry_t::erpm_u16 reading to the
+ *        rotor's mechanical angular velocity in rad/s.
+ *
+ *  Spin direction is NOT encoded in the telemetry frame -- the value
+ *  returned here is always >= 0. If your control law needs signed
+ *  angular velocity (e.g. 3D mode reversing motors), pair this with
+ *  the commanded direction kept by the application.
+ */
+static inline float dshot_erpm_to_rad_s(uint16_t erpm_u16)
+{
+    return (float)erpm_u16 * DSHOT_ERPM_TO_RAD_S;
+}
+
+/* Forward declaration for the convenience helper below; the full
+ * definition needs the dshotMotor_t struct, which is defined further
+ * down in this header. */
+struct dshotMotor_s;
+
+/*!
+ * @brief Convenience: read the motor's last validated mechanical
+ *        angular velocity, in rad/s. Returns 0 if the most recent
+ *        frame failed validation (i.e. valid_b is false).
+ */
+float dshot_motor_omega_rad_s(const struct dshotMotor_s *motor);
+
 /*******************************************************************************
  * Telemetry
  ******************************************************************************/
+
+/*
+ * Per-motor telemetry health counters. Bumped by the telemetry task on
+ * every request-response cycle so the application can decide when a
+ * motor's feedback should no longer be trusted by the control loop.
+ *
+ *   tm_ok                  : frames that passed CRC + plausibility
+ *   tm_crc_fail            : frames that arrived but failed CRC
+ *   tm_timeouts            : the ESC never responded within the
+ *                            configured deadline
+ *   tm_implausible         : frames that passed CRC but failed
+ *                            plausibility (out-of-range voltage / temp)
+ *   tm_consecutive_fail    : consecutive failures of any kind; resets
+ *                            on the next ok. Use this to drive a
+ *                            failsafe gate in the control loop.
+ */
+typedef struct dshotTelemetryStats_s {
+    uint32_t tm_ok;
+    uint32_t tm_crc_fail;
+    uint32_t tm_timeouts;
+    uint32_t tm_implausible;
+    uint32_t tm_consecutive_fail;   /* resets on any ok */
+} dshotTelemetryStats_t;
 
 typedef struct dshotTelemetry_s {
 	int8_t temperature_u8;      // Temperature in °C
@@ -91,12 +164,28 @@ typedef struct dshotControl_s {
  ******************************************************************************/
 typedef struct dshotMotor_s {
 
-	dshotTelemetry_t dshot_telemtry;
-	dshotControl_t   dshot_control;
-	dma_ctrl_t       dma;
-	pwm_ctrl_t       pwm;
-	uint8_t		     dma_id;
-	uint8_t          motor_id;
+	dshotTelemetry_t      dshot_telemtry;
+	dshotControl_t        dshot_control;
+	dshotTelemetryStats_t stats;
+	dma_ctrl_t            dma;
+	pwm_ctrl_t            pwm;
+	uint8_t               dma_id;
+	uint8_t               motor_id;
+
+	/*
+	 * Monotonic counter, bumped by the ESCTelemetryTask whenever a
+	 * frame for THIS motor passes CRC + plausibility. The control
+	 * loop snapshots its last-seen value to detect "no fresh data
+	 * since the previous tick" and avoid re-running the PID against
+	 * a stale measurement (which would otherwise drive the throttle
+	 * upward on every dropped frame -- the source of the cyan-trace
+	 * spikes you saw at constant target).
+	 *
+	 * Volatile because it crosses the task boundary (writer:
+	 * ESCTelemetryTask, reader: ControlLoopTask). 32-bit aligned ⇒
+	 * atomic on Cortex-M33; no further sync needed.
+	 */
+	volatile uint32_t     telemetry_seq;
 
 } dshotMotor_t;
 
@@ -113,6 +202,26 @@ typedef struct dshotSystem_s {
     dshotMotor_t     motor1;
     dshotMotor_t     motor2;
     dshotMotor_t     motor3;
+
+    /*
+     * Telemetry-confirmed arming state.
+     *
+     *   seen_mask : bit i is set the first time motor i returns a
+     *               valid (CRC-passing) telemetry frame.
+     *   armed     : becomes true the first cycle in which seen_mask
+     *               covers every motor (== (1<<MAX_SUPPORTED_MOTORS)-1).
+     *
+     * The application task that drives DSHOT MUST hold all motor
+     * throttles at 0 while !armed, regardless of what the control
+     * loop wants. This guarantees the ESCs received their full
+     * arming window AND that we have a working telemetry path on
+     * every motor before the controller is allowed to spin them up.
+     *
+     * Volatile because they're written by the telemetry task and
+     * read by the DSHOT generator task.
+     */
+    volatile bool    armed;
+    volatile uint8_t seen_mask;
 
 } dshotSystem_t;
 
@@ -201,5 +310,35 @@ uint8_t get_crc8(uint8_t *Buf, uint8_t BufLen);
  * @param esc Pointer to the DShot system structure.
  */
 void dshot_startup_sequence(dshotSystem_t *esc);
+
+/*!
+ * @brief Drain any bytes sitting in the ESC telemetry UART RX FIFO and
+ *        clear all error/idle status flags.
+ *
+ *  Called BEFORE arming a fresh EDMA RX so a stray byte left over from
+ *  a previous late response does not get latched as the first byte of
+ *  the new frame.
+ */
+void esc_uart_flush(void);
+
+/*!
+ * @brief Cancel an in-flight EDMA RX on the ESC telemetry UART.
+ *
+ *  Used by the timeout-recovery path. After calling this the caller
+ *  should esc_uart_flush() and only re-arm with esc_start_dma_rx() on
+ *  the next request cycle.
+ */
+status_t esc_uart_abort_rx(void);
+
+/*!
+ * @brief Cheap plausibility check on a parsed telemetry record.
+ *
+ *  Catches obviously-corrupted frames that happened to pass CRC (rare
+ *  but possible). Bounds are intentionally loose -- tighten them per
+ *  your battery / motor in the application if you want.
+ *
+ *  @return true if the record looks plausible.
+ */
+bool dshot_telemetry_plausible(const dshotTelemetry_t *t);
 
 #endif /* DSHOT_H_ */

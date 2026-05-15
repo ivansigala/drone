@@ -1,0 +1,1 @@
+read_debug_uart('COM9', 115200)

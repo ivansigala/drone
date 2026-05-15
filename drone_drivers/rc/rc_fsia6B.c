@@ -65,7 +65,7 @@ rc_status uart_sync_rx(uart_ctrl_t *ctrl, uint32_t timeout_ms)
         }
 
         // Yield the CPU for 1 RTOS tick (~1ms) so Motor Tasks can run
-        vTaskDelay(1);
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 
     // 3. The bus is now idle. Do one final flush
