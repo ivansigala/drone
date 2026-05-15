@@ -87,7 +87,6 @@ status_t bme280_init(bme280_ctrl_t *bme_ctl)
         PRINTF("BME280: unexpected chip ID 0x%02X (expected 0x60)\r\n", chip_id);
         return kStatus_Fail;
     }
-    PRINTF("BME280: chip ID OK (0x60)\r\n");
 
     /* --- Soft reset — brings the sensor to its power-on state --- */
     status = bme280_write_reg(bme_ctl, RESET_REG, BME280_SOFT_RESET_CMD);
@@ -161,10 +160,10 @@ status_t bme280_read_calibration(bme280_ctrl_t *bme_ctl)
     }
 
     /* All T/P trim words are stored little-endian (LSB at lower address) */
-    bme_ctl->cal_data.dig_T1 = (uint16_t)(rx1[2]  << 8) | rx1[1];
+    bme_ctl->cal_data.dig_T1 = (uint16_t)(rx1[2]  << 8)  | rx1[1];
     bme_ctl->cal_data.dig_T2 = (int16_t) ((rx1[4]  << 8) | rx1[3]);
     bme_ctl->cal_data.dig_T3 = (int16_t) ((rx1[6]  << 8) | rx1[5]);
-    bme_ctl->cal_data.dig_P1 = (uint16_t)(rx1[8]  << 8) | rx1[7];
+    bme_ctl->cal_data.dig_P1 = (uint16_t)(rx1[8]  << 8)  | rx1[7];
     bme_ctl->cal_data.dig_P2 = (int16_t) ((rx1[10] << 8) | rx1[9]);
     bme_ctl->cal_data.dig_P3 = (int16_t) ((rx1[12] << 8) | rx1[11]);
     bme_ctl->cal_data.dig_P4 = (int16_t) ((rx1[14] << 8) | rx1[13]);

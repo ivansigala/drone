@@ -31,9 +31,11 @@ typedef struct uart_s {
 	LPUART_Type  *uart_base;
 	DMA_Type     *dma_base;
 	dma_request_source_t edma_rx_channel;
+	dma_request_source_t edma_tx_channel;
 	lpuart_edma_transfer_callback_t callback;
 	uint32_t baudrate;
 	uint32_t dma_rx_channel;
+	uint32_t dma_tx_channel;
 	bool enable_dma;
 } uart_ctrl_t;
 
@@ -43,6 +45,12 @@ void uart_get_default_esc_config(uart_ctrl_t *ctrl, void* callback_func);
 
 void uart_init(uart_ctrl_t *ctrl);
 void uart_write(uart_ctrl_t *ctrl, const char* string);
+
+/* Binary-safe, blocking TX. Use this for protocols whose payloads may contain
+ * 0x00 (UBX, MAVLink, DShot, etc.) where strlen-based writes are unsafe.
+ * Returns when the last byte has been pushed into the TX shift register. */
+void uart_write_bytes_blocking(uart_ctrl_t *ctrl, const uint8_t *data, uint32_t size);
+
 void uart_read_dma(uart_ctrl_t *ctrl, uint8_t *data, uint32_t size);
 void uart_attach_interrupt(LPUART_Type* uart_base, void* func_ptr);
 

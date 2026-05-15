@@ -12,13 +12,17 @@
  ******************************************************************************/
 #define RC_LPUART_BASEADDR         LPUART1
 #define RC_LPUART_RX_DMA_CHANNEL   1U
+#define RC_LPUART_TX_DMA_CHANNEL   3U
 #define RC_LPUART_RX_EDMA_CHANNEL  kDma0RequestMuxLpFlexcomm1Rx
+#define RC_LPUART_TX_EDMA_CHANNEL  kDma0RequestMuxLpFlexcomm1Tx
 #define RC_LPUART_DMA_BASEADDR     DMA0
 #define RC_UART_BAUDRATE           115200U
 
 #define ESC_LPUART_BASEADDR        LPUART7
 #define ESC_LPUART_RX_DMA_CHANNEL  2U
+#define ESC_LPUART_TX_DMA_CHANNEL  4U
 #define ESC_LPUART_RX_EDMA_CHANNEL kDma0RequestMuxLpFlexcomm7Rx
+#define ESC_LPUART_TX_EDMA_CHANNEL kDma0RequestMuxLpFlexcomm7Tx
 #define ESC_LPUART_DMA_BASEADDR    DMA0
 #define ESC_UART_BAUDRATE          115200U
 
@@ -40,6 +44,7 @@ void (*UART9_HANDLE)(void) = NULL;
 static lpuart_handle_t g_lpuartHandles[FSL_FEATURE_SOC_LPUART_COUNT];
 static lpuart_edma_handle_t g_lpuartEdmaHandles[FSL_FEATURE_SOC_LPUART_COUNT];
 static edma_handle_t g_lpuartRxEdmaHandles[FSL_FEATURE_SOC_LPUART_COUNT];
+static edma_handle_t g_lpuartTxEdmaHandles[FSL_FEATURE_SOC_LPUART_COUNT];
 
 /*******************************************************************************
  * Helper Functions
@@ -67,7 +72,9 @@ void uart_get_default_rc_config(uart_ctrl_t *ctrl, void* callback_func) {
     ctrl->uart_base       = RC_LPUART_BASEADDR;
     ctrl->dma_base        = RC_LPUART_DMA_BASEADDR;
     ctrl->dma_rx_channel  = RC_LPUART_RX_DMA_CHANNEL;
+    ctrl->dma_tx_channel  = RC_LPUART_TX_DMA_CHANNEL;
     ctrl->edma_rx_channel = RC_LPUART_RX_EDMA_CHANNEL;
+    ctrl->edma_tx_channel = RC_LPUART_TX_EDMA_CHANNEL;
     ctrl->callback        = (lpuart_edma_transfer_callback_t)callback_func;
     ctrl->baudrate        = RC_UART_BAUDRATE;
     ctrl->enable_dma      = true;
@@ -77,7 +84,9 @@ void uart_get_default_esc_config(uart_ctrl_t *ctrl, void* callback_func) {
     ctrl->uart_base       = ESC_LPUART_BASEADDR;
     ctrl->dma_base        = ESC_LPUART_DMA_BASEADDR;
     ctrl->dma_rx_channel  = ESC_LPUART_RX_DMA_CHANNEL;
+    ctrl->dma_tx_channel  = ESC_LPUART_TX_DMA_CHANNEL;
     ctrl->edma_rx_channel = ESC_LPUART_RX_EDMA_CHANNEL;
+    ctrl->edma_tx_channel = ESC_LPUART_TX_EDMA_CHANNEL;
     ctrl->callback        = (lpuart_edma_transfer_callback_t)callback_func;
     ctrl->baudrate        = ESC_UART_BAUDRATE;
     ctrl->enable_dma      = true;
@@ -103,15 +112,22 @@ void uart_init(uart_ctrl_t *ctrl) {
     if(ctrl->enable_dma){
         EDMA_GetDefaultConfig(&userConfig);
         EDMA_Init(ctrl->dma_base, &userConfig);
-        EDMA_CreateHandle(&g_lpuartRxEdmaHandles[instance], ctrl->dma_base, ctrl->dma_rx_channel);
 
+        // RX channel
+        EDMA_CreateHandle(&g_lpuartRxEdmaHandles[instance], ctrl->dma_base, ctrl->dma_rx_channel);
         EDMA_SetChannelMux(ctrl->dma_base, ctrl->dma_rx_channel, ctrl->edma_rx_channel);
-        
-        // Create the EDMA Handle
+
+        // TX channel
+        EDMA_CreateHandle(&g_lpuartTxEdmaHandles[instance], ctrl->dma_base, ctrl->dma_tx_channel);
+        EDMA_SetChannelMux(ctrl->dma_base, ctrl->dma_tx_channel, ctrl->edma_tx_channel);
+
+        // Create the EDMA Handle (both TX and RX wired up)
         LPUART_TransferCreateHandleEDMA(ctrl->uart_base,
                                         &g_lpuartEdmaHandles[instance],
                                         ctrl->callback,
-                                        NULL, NULL, &g_lpuartRxEdmaHandles[instance]);
+                                        NULL,
+                                        &g_lpuartTxEdmaHandles[instance],
+                                        &g_lpuartRxEdmaHandles[instance]);
     } else {
         // Create the Transactional Handle
         // This allows the SDK to manage the non-blocking transfer state
@@ -143,13 +159,30 @@ void uart_write(uart_ctrl_t *ctrl, const char* string){
     xfer.data = (uint8_t*)string;
     xfer.dataSize = strlen(string);
 
-    // 2. Send using the handle
+    // 2. Send using the EDMA handle (non-blocking, DMA-backed)
     status_t status;
-    do {
-        status = LPUART_TransferSendNonBlocking(ctrl->uart_base,
-                                                &g_lpuartHandles[instance],
-                                                &xfer);
-    } while (status == kStatus_LPUART_TxBusy);
+    if (ctrl->enable_dma) {
+        do {
+            status = LPUART_SendEDMA(ctrl->uart_base,
+                                     &g_lpuartEdmaHandles[instance],
+                                     &xfer);
+        } while (status == kStatus_LPUART_TxBusy);
+    } else {
+        do {
+            status = LPUART_TransferSendNonBlocking(ctrl->uart_base,
+                                                    &g_lpuartHandles[instance],
+                                                    &xfer);
+        } while (status == kStatus_LPUART_TxBusy);
+    }
+}
+
+// Binary-safe blocking TX. Bypasses the SDK transfer state machine and writes
+// straight to the LPUART TX shift register, which is the right tool for sending
+// small, framed binary payloads (UBX, DShot, etc.) where strlen-based writes are
+// unsafe and EDMA-TX completion handshakes are overkill.
+void uart_write_bytes_blocking(uart_ctrl_t *ctrl, const uint8_t *data, uint32_t size) {
+    if (data == NULL || size == 0) return;
+    LPUART_WriteBlocking(ctrl->uart_base, data, size);
 }
 
 // ISR Helper to pass control to SDK driver for TX operations

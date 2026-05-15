@@ -192,6 +192,17 @@ status_t bno_08x_configure_sensors(void)
         return kStatus_Fail;
     }
 
+    /* SH2_GYROSCOPE_CALIBRATED outputs angular velocity in rad/s on the
+     * gyroscope.{x,y,z} fields of sh2_SensorValue_t.  100 Hz matches the
+     * rotation-vector cadence so both streams interleave evenly.         */
+    config.reportInterval_us = 10000; // 100 Hz
+    if (sh2_setSensorConfig(SH2_GYROSCOPE_CALIBRATED, &config) != SH2_OK) {
+        PRINTF("Failed to configure calibrated gyroscope\r\n");
+        return kStatus_Fail;
+    }
+
+    /* SH2_LINEAR_ACCELERATION outputs gravity-compensated acceleration in
+     * m/s^2 on linearAcceleration.{x,y,z}.  Same 100 Hz cadence.          */
     config.reportInterval_us = 10000; // 100 Hz
     if (sh2_setSensorConfig(SH2_LINEAR_ACCELERATION, &config) != SH2_OK) {
         PRINTF("Failed to configure linear acceleration\r\n");
