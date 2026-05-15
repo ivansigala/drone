@@ -6,14 +6,18 @@
  *
  * HIL host runner for the discrete SMC drone controller.
  *
+ * The Simulink plant was reduced (May 2026) to control only altitude and
+ * the three Euler angles, so the host-side state vector shrank from 12
+ * to 8 floats.
+ *
  * Wire protocol over LPUART4 (VCOM bridge, 115200 8N1):
- *   PC  -> MCU : 16 IEEE-754 singles (64 bytes, little-endian)
- *                [x,y,z, dx,dy,dz, roll,pitch,yaw, droll,dpitch,dyaw,
- *                 w0,w1,w2,w3]
- *   MCU -> PC  : 4  IEEE-754 singles (16 bytes, little-endian)
+ *   PC  -> MCU : 12 IEEE-754 singles (48 bytes, little-endian)
+ *                [z, dz, roll, pitch, yaw, droll, dpitch, dyaw,
+ *                 w0, w1, w2, w3]
+ *   MCU -> PC  :  4 IEEE-754 singles (16 bytes, little-endian)
  *                [U0, U1, U2, U3]
  *
- * 25 Hz hardware timer wakes the task; the read is blocking, so the loop
+ * 100 Hz hardware timer wakes the task; the read is blocking, so the loop
  * paces against whatever cadence the host actually sends.
  */
 
@@ -36,17 +40,20 @@
 #define control_task_PRIORITY  (configMAX_PRIORITIES - 1)
 #define HIL_UART               LPUART4
 
+#define HIL_RX_FLOATS          12      /* 8 states + 4 motor speeds */
+#define HIL_TX_FLOATS           4      /* U0, U1, U2, U3            */
+
 static void control_task(void *pvParameters);
 TaskHandle_t controlTaskHandle = NULL;
 
 typedef union {
-    float   f[16];
-    uint8_t b[16 * 4];
+    float   f[HIL_RX_FLOATS];
+    uint8_t b[HIL_RX_FLOATS * 4];
 } hil_rx_packet_t;
 
 typedef union {
-    float   f[4];
-    uint8_t b[4 * 4];
+    float   f[HIL_TX_FLOATS];
+    uint8_t b[HIL_TX_FLOATS * 4];
 } hil_tx_packet_t;
 
 void timer_0_callback(void *args)
@@ -85,12 +92,10 @@ static void control_task(void *pvParameters)
     hil_rx_packet_t rx;
     hil_tx_packet_t tx;
 
-    // const float x_target   = 1.0f;
-    // const float y_target   = 1.0f;
-    const float z_target   = 1.0f;
+    const float z_target     = 1.0f;
     const float roll_target  = 0.0f;
     const float pitch_target = 0.0f;
-    const float yaw_target = 0.0f;
+    const float yaw_target   = 0.0f;
 
     for (;;)
     {
@@ -100,17 +105,15 @@ static void control_task(void *pvParameters)
             continue;
         }
 
+        /* Layout:  rx.f[0..7] = [z, dz, roll, pitch, yaw, droll, dpitch, dyaw]
+         *          rx.f[8..11] = [w0, w1, w2, w3]                              */
         const float *states = &rx.f[0];
-        const float *w      = &rx.f[12];
+        const float *w      = &rx.f[8];
 
+        /* Refresh cached attitude trig (roll=2, pitch=3, yaw=4) */
         dynamics_update_trig(states[2], states[3], states[4]);
 
         float U0 = dynamics_compute_U0(states, z_target);
-
-        // float roll_d  = roll_target;
-        // float pitch_d = pitch_target;
-        // dynamics_compute_position_control(states, x_target, y_target, w,
-        //                                   &roll_d, &pitch_d);
 
         const float eta_d[3] = { roll_target, pitch_target, yaw_target };
         float U123[3];

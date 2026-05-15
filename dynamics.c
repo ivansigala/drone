@@ -4,6 +4,12 @@
  * Discrete SMC controllers + attitude kinematic helpers.
  * Math layout mirrors the Simulink reference 1:1.
  *
+ * State vector (8 elements, 0-indexed C / 1-indexed MATLAB):
+ *   states[0]=z      states[4]=yaw
+ *   states[1]=dz     states[5]=droll
+ *   states[2]=roll   states[6]=dpitch
+ *   states[3]=pitch  states[7]=dyaw
+ *
  * Created on: Mayo, 2026
  * Author:     diego
  */
@@ -66,13 +72,6 @@ static inline void cross3(const float a[3], const float b[3], float out[3])
     out[2] = a[0] * b[1] - a[1] * b[0];
 }
 
-static inline float clampf(float x, float lo, float hi)
-{
-    if (x > hi) return hi;
-    if (x < lo) return lo;
-    return x;
-}
-
 /* =========================================================================
  *      Kinematics
  * ========================================================================= */
@@ -129,7 +128,7 @@ void dynamics_compute_dlambda(float droll, float dpitch, float out[9])
  *              * ( -a_z*T*dz - A + xi_z*T*s_z + e_z*T*sat(s_z) )
  * ========================================================================= */
 
-float dynamics_compute_U0(const float states[12], float z_k_d)
+float dynamics_compute_U0(const float states[8], float z_k_d)
 {
     const float z_k  = states[0];
     const float dz_k = states[1];
@@ -154,92 +153,10 @@ float dynamics_compute_U0(const float states[12], float z_k_d)
 }
 
 /* =========================================================================
- *      SMC #2 — Position controller (outputs roll_d, pitch_d)
+ *      SMC #2 — Attitude controller (outputs U1, U2, U3)
  *
- *   U0  = k2 * sum_i w_i*|w_i|       (current achieved thrust)
- *   D   = T * U0 * sin(yaw)
- *
- *   C   = (T*U0/M)*cos(yaw)*sin(pitch) - (T/M)*Sx*sign(dx)*dx^2
- *   s_x = a_x*(x_k_d - x_k) - dx_k
- *   roll_arg  = (M/D)*( -a_x*T*dx - C + xi_x*T*s_x + e_x*T*sat(s_x) )
- *
- *   E   = -(T*U0/M)*cos(yaw)*sin(roll) - (T/M)*Sy*sign(dy)*dy^2
- *   s_y = a_y*(y_k_d - y_k) - dy_k
- *   pitch_arg = (M/D)*( -a_y*T*dy - E + xi_y*T*s_y + e_y*T*sat(s_y) )
- *
- *   roll_d  = asin(clamp(roll_arg,  +/-SMC_TILT_MAX))
- *   pitch_d = asin(clamp(pitch_arg, +/-SMC_TILT_MAX))
- * ========================================================================= */
-
-void dynamics_compute_position_control(const float states[12],
-                                       float x_k_d, float y_k_d,
-                                       const float w[4],
-                                       float *roll_k_d, float *pitch_k_d)
-{
-    const float x_k  = states[0];
-    const float y_k  = states[1];
-    const float dx_k = states[3];
-    const float dy_k = states[4];
-
-    /* Current rotor-produced thrust. Sign-preserving square keeps the
-     * physics consistent if a motor ever spins negative. */
-    const float U0 = K2 * ( fabsf(w[0]) * w[0]
-                          + fabsf(w[1]) * w[1]
-                          + fabsf(w[2]) * w[2]
-                          + fabsf(w[3]) * w[3] );
-
-    const float D  = DYNAMICS_T * U0 * s_sin_yaw;
-
-    /* Singularity at yaw = k*pi: roll has no influence on x — bail safely */
-    if (fabsf(U0) < DYNAMICS_EPS_DENOM ||
-        fabsf(D)  < DYNAMICS_EPS_DENOM) {
-        *roll_k_d  = 0.0f;
-        *pitch_k_d = 0.0f;
-        return;
-    }
-
-    const float M_over_D = DRONE_M / D;
-    const float T_over_M = DYNAMICS_T / DRONE_M;
-    const float TU0_M    = DYNAMICS_T * U0 / DRONE_M;
-
-    /* ---- X axis -> roll_d ---- */
-    const float C = TU0_M * s_cos_yaw * s_sin_pitch
-                  - T_over_M * DRONE_SX * signf(dx_k) * dx_k * dx_k;
-
-    const float s_x   = SMC_A_X * (x_k_d - x_k) - dx_k;
-    const float sat_x = satf(s_x, SMC_EPSILON_X);
-
-    float roll_arg = M_over_D *
-                     ( -SMC_A_X  * DYNAMICS_T * dx_k
-                       -  C
-                       +  SMC_XI_X * DYNAMICS_T * s_x
-                       +  SMC_E_X  * DYNAMICS_T * sat_x );
-
-    roll_arg = clampf(roll_arg, -SMC_TILT_MAX, SMC_TILT_MAX);
-    *roll_k_d = asinf(roll_arg);
-
-    /* ---- Y axis -> pitch_d ---- */
-    const float E = -TU0_M * s_cos_yaw * s_sin_roll
-                  -  T_over_M * DRONE_SY * signf(dy_k) * dy_k * dy_k;
-
-    const float s_y   = SMC_A_Y * (y_k_d - y_k) - dy_k;
-    const float sat_y = satf(s_y, SMC_EPSILON_Y);
-
-    float pitch_arg = M_over_D *
-                      ( -SMC_A_Y  * DYNAMICS_T * dy_k
-                        -  E
-                        +  SMC_XI_Y * DYNAMICS_T * s_y
-                        +  SMC_E_Y  * DYNAMICS_T * sat_y );
-
-    pitch_arg = clampf(pitch_arg, -SMC_TILT_MAX, SMC_TILT_MAX);
-    *pitch_k_d = asinf(pitch_arg);
-}
-
-/* =========================================================================
- *      SMC #3 — Attitude controller (outputs U1, U2, U3)
- *
- *   eta   = [roll;  pitch;  yaw]
- *   deta  = [droll; dpitch; dyaw]
+ *   eta   = [roll;  pitch;  yaw]      = states[2..4]
+ *   deta  = [droll; dpitch; dyaw]     = states[5..7]
  *
  *   J     = Lambda^T * I * Lambda          (Euler-rate mass matrix)
  *   Omega = Lambda * deta                  (body angular velocity)
@@ -252,12 +169,12 @@ void dynamics_compute_position_control(const float states[12],
  *   U     = (J*Lambda / T) * V  -  B
  * ========================================================================= */
 
-void dynamics_compute_attitude_control(const float states[12],
+void dynamics_compute_attitude_control(const float states[8],
                                        const float eta_k_d[3],
                                        const float w[4],
                                        float U[3])
 {
-    const float eta_k[3]  = { states[2], states[3], states[4]  };
+    const float eta_k[3]  = { states[2], states[3], states[4] };
     float       deta_k[3] = { states[5], states[6], states[7] };
 
     /* ---- Build Lambda and dLambda from cached trig ---- */
