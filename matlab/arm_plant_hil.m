@@ -1,0 +1,211 @@
+
+clear; clc; close all;
+
+%% Puerto
+port     = "COM9";
+baudrate = 115200;
+s = serialport(port, baudrate, "Timeout", 5);
+flush(s);
+
+%% Parametros
+l1  = 2;   l2  = 2;
+lc1 = l1/2; lc2 = l2/2;
+m1  = 0.5; m2  = 0.5;
+b1  = 0.3; b2  = 0.3;
+I1  = 0.05; I2 = 0.05;
+grav = 9.81;
+
+T     = 0.05;          % Periodo de muestreo
+t_end = 5;
+N     = round(t_end / T);
+
+%% Referencia de la elipse
+t_vec = (0:N) * T;
+x_c = 0.5;   y_c = 0.5;
+a   = 0.5;   b_e = 0.8;
+w_c = 2*pi / t_end;
+
+x_des = x_c + a   * cos(w_c * t_vec);
+y_des = y_c + b_e * sin(w_c * t_vec);
+
+% Cinematica inversa
+q1_des = zeros(1, N+1);
+q2_des = zeros(1, N+1);
+for i = 1:N+1
+    xd = x_des(i);  yd = y_des(i);
+    if (xd^2 + yd^2) > (l1+l2)^2
+        error('Reference point (%.3f, %.3f) outside workspace!', xd, yd);
+    end
+    cos_q2 = (xd^2 + yd^2 - l1^2 - l2^2) / (2*l1*l2);
+    cos_q2 = max(-1, min(1, cos_q2));
+    q2_des(i) = acos(cos_q2);
+    q1_des(i) = atan2(yd, xd) - atan2(l2*sin(q2_des(i)), l1 + l2*cos(q2_des(i)));
+end
+
+%% --- Initial Conditions -----------------------------------
+x0 = [q1_des(1); q2_des(1); 0.0; 0.0];
+
+%% --- Storage ----------------------------------------------
+x_hist  = zeros(4,   N+1);
+u_hist  = zeros(2,   N);
+xy_hist = zeros(2,   N+1);
+xy_ref  = [x_des; y_des];
+
+x_hist(:,1) = x0;
+q1 = x0(1); q2 = x0(2);
+xy_hist(:,1) = [l1*cos(q1) + l2*cos(q1+q2);
+                l1*sin(q1) + l2*sin(q1+q2)];
+
+params.m1=m1;   params.m2=m2;
+params.l1=l1;   params.l2=l2;
+params.lc1=lc1; params.lc2=lc2;
+params.b1=b1;   params.b2=b2;
+params.I1=I1;   params.I2=I2;
+params.grav=grav;
+
+%% HIL loop
+
+SYNC_HEADER = uint8([170, 85]);   % 0xAA 0x55
+
+pause(0.2); flush(s);
+
+disp('Starting HIL plant simulation...');
+miss_count = 0;
+tic;
+for k = 1:N
+    xk = x_hist(:, k);
+
+    q_des_k   = [q1_des(k);   q2_des(k)];
+    q_des_kp1 = [q1_des(k+1); q2_des(k+1)];
+    if k < N
+        q_des_kp2 = [q1_des(k+2); q2_des(k+2)];
+    else
+        q_des_kp2 = q_des_kp1;
+    end
+
+
+    tx_floats = single([xk(:).', q_des_k(:).', q_des_kp1(:).', q_des_kp2(:).']);
+    tx_bytes  = [SYNC_HEADER, typecast(tx_floats, 'uint8')];   % 2 + 40 = 42 B
+    write(s, tx_bytes, 'uint8');
+
+    % --- RX: 2 singles  [tau1, tau2] ----------------------------------
+    rx = read(s, 2, "single");
+    if numel(rx) == 2
+        u_k = double(rx(:));
+    else
+        miss_count = miss_count + 1;
+        warning('HIL: missed reply at k=%d, holding last torque.', k);
+        if k > 1
+            u_k = u_hist(:, k-1);
+        else
+            u_k = [0; 0];
+        end
+        flush(s);
+    end
+    u_hist(:, k) = u_k;
+
+    % Siguimete salida de la planta
+    [f12, f34, B34] = plant_dyn(xk, params);
+    x12_next = xk(1:2) + f12 * T;
+    x34_next = xk(3:4) + f34 * T + B34 * u_k * T;
+    x_hist(:, k+1) = [x12_next; x34_next];
+
+    q1n = x_hist(1, k+1); q2n = x_hist(2, k+1);
+    xy_hist(:, k+1) = [l1*cos(q1n) + l2*cos(q1n+q2n);
+                       l1*sin(q1n) + l2*sin(q1n+q2n)];
+end
+elapsed = toc;
+fprintf('Simulation complete (%.2f s wall).\n', elapsed);
+clear s;
+
+t_hist = (0:N) * T;
+
+%% Plots
+c1   = [0.00,0.45,0.74];   c2   = [0.85,0.33,0.10];
+c3   = [0.47,0.67,0.19];   c4   = [0.49,0.18,0.56];
+cgray= [0.6,0.6,0.6];
+
+figure('Name','2-DOF Robot HIL (controller on MCU)','NumberTitle','off', ...
+       'Position',[80 60 1200 900]);
+
+% (1) X-Y trajectory
+subplot(2,3,[1,2]);
+plot(xy_ref(1,1:N+1),  xy_ref(2,1:N+1),  '--','Color',cgray,'LineWidth',1.5, ...
+     'DisplayName','Reference'); hold on;
+plot(xy_hist(1,1:N+1), xy_hist(2,1:N+1), 'Color',c1,'LineWidth',2, ...
+     'DisplayName','Actual (HIL)');
+plot(xy_hist(1,1),   xy_hist(2,1),   'go','MarkerSize',10,'MarkerFaceColor','g');
+plot(xy_hist(1,N+1), xy_hist(2,N+1), 'rs','MarkerSize',10,'MarkerFaceColor','r');
+theta_ws = linspace(0,2*pi,300);
+plot((l1+l2)*cos(theta_ws),(l1+l2)*sin(theta_ws),'k:','LineWidth',0.8, ...
+     'DisplayName','Workspace');
+xlabel('x [m]'); ylabel('y [m]');
+title('End-Effector Trajectory (HIL)','FontWeight','bold');
+legend('Location','best'); grid on; axis equal;
+
+% (2) Joint angles vs time
+subplot(2,3,3);
+plot(t_hist(1:N+1), rad2deg(x_hist(1,1:N+1)), 'Color',c1,'LineWidth',2, ...
+     'DisplayName','q_1'); hold on;
+plot(t_hist(1:N+1), rad2deg(x_hist(2,1:N+1)), 'Color',c2,'LineWidth',2, ...
+     'DisplayName','q_2');
+plot(t_hist(1:N+1), rad2deg(q1_des(1:N+1)), '--','Color',c1,'LineWidth',1, ...
+     'DisplayName','q_{1,des}');
+plot(t_hist(1:N+1), rad2deg(q2_des(1:N+1)), '--','Color',c2,'LineWidth',1, ...
+     'DisplayName','q_{2,des}');
+xlabel('Time [s]'); ylabel('Angle [deg]');
+title('Joint Angles vs Time','FontWeight','bold');
+legend('Location','best'); grid on;
+
+% (3) Joint velocities
+subplot(2,3,4);
+plot(t_hist(1:N+1), x_hist(3,1:N+1), 'Color',c3,'LineWidth',2,'DisplayName','dq_1'); hold on;
+plot(t_hist(1:N+1), x_hist(4,1:N+1), 'Color',c4,'LineWidth',2,'DisplayName','dq_2');
+yline(0,'k--','LineWidth',0.8);
+xlabel('Time [s]'); ylabel('[rad/s]');
+title('Joint Velocities','FontWeight','bold');
+legend('Location','best'); grid on;
+
+% (4) Control torques (from MCU)
+subplot(2,3,5);
+plot(t_hist(1:N), u_hist(1,1:N), 'Color',c1,'LineWidth',2,'DisplayName','\tau_1'); hold on;
+plot(t_hist(1:N), u_hist(2,1:N), 'Color',c2,'LineWidth',2,'DisplayName','\tau_2');
+yline(0,'k--','LineWidth',0.8);
+xlabel('Time [s]'); ylabel('Torque [N·m]');
+title('Torques from MCU','FontWeight','bold');
+legend('Location','best'); grid on;
+
+% (5) Cartesian error
+xy_err = sqrt( (xy_hist(1,1:N+1) - xy_ref(1,1:N+1)).^2 + ...
+               (xy_hist(2,1:N+1) - xy_ref(2,1:N+1)).^2 );
+subplot(2,3,6);
+plot(t_hist(1:N+1), xy_err, 'Color',c2,'LineWidth',2);
+xlabel('Time [s]'); ylabel('|err| [m]');
+title(sprintf('Cartesian error  (max=%.4f, rms=%.4f)', ...
+              max(xy_err), rms(xy_err)),'FontWeight','bold');
+grid on;
+
+sgtitle('HIL: MATLAB plant  <-> MCU block controller', ...
+        'FontSize',14,'FontWeight','bold');
+
+%% Dinamicas de la planta
+function [f12, f34, B34] = plant_dyn(xk, p)
+    q1 = xk(1); q2 = xk(2); dq1 = xk(3); dq2 = xk(4);
+
+    d11 = p.m1*p.lc1^2 + p.m2*(p.l1^2 + p.lc2^2 + 2*p.l1*p.lc2*cos(q2)) + p.I1 + p.I2;
+    d12 = p.m2*(p.lc2^2 + p.l1*p.lc2*cos(q2)) + p.I2;
+    d22 = p.m2*p.lc2^2 + p.I2;
+    D   = [d11, d12; d12, d22];
+
+    h    = -p.m2*p.l1*p.lc2*sin(q2);
+    phi1 = (p.m1*p.lc1 + p.m2*p.l1)*cos(q1);
+    phi2 =  p.m2*p.lc2*cos(q1 + q2);
+
+    Cv = [(2*dq1*dq2 + dq2^2)*h; -dq1^2*h];
+    G  = [p.grav*(phi1 + phi2);   p.grav*phi2];
+    Bv = [p.b1*dq1;               p.b2*dq2];
+
+    f12 = [dq1; dq2];
+    f34 = D \ (-Cv - G - Bv);
+    B34 = inv(D);
+end
