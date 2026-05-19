@@ -1,15 +1,15 @@
 /*!
  * @file gpio_driver_mcxn947.h
  * @brief GPIO driver for MCXN947 microcontroller
- *
+ * 
  * This header provides high-level API for GPIO management on the NXP MCXN947 MCU including:
  * - GPIO pin configuration (direction, pull resistors, drive strength)
  * - GPIO output control (set, toggle)
  * - GPIO interrupt handling (attach callbacks, ISR handlers)
- *
+ * 
  * @author Diego
  * @date April 10, 2026
- *
+ * 
  * @details
  * The driver provides a simple interface using the gpio_ctrl_t structure that contains
  * all necessary GPIO configuration. Key functions:
@@ -17,11 +17,11 @@
  * - gpio_attach_interrupt(): Attach interrupt handler to GPIO pin
  * - gpio_set_output(): Set GPIO output value
  * - gpio_toggle_output(): Toggle GPIO output state
- *
+ * 
  * @note This driver uses callback-based interrupt handling. Each GPIO port has dedicated
  *       ISR handlers (GPIO00_IRQHandler through GPIO51_IRQHandler) that invoke the
  *       registered callbacks.
- *
+ * 
  * @example
  * @code
  * // Initialize GPIO pin as input with interrupt
@@ -31,10 +31,10 @@
  *     .pin = 17,
  *     .dir = gpio_input
  * };
- *
+ * 
  * // Initialize the pin
  * gpio_init(&imu_int);
- *
+ * 
  * // Attach interrupt handler
  * void my_callback(void) {
  *     // Handle interrupt event
@@ -65,9 +65,9 @@ typedef enum gpio_direction_s{
 } gpio_direction_t;
 
 
-/*!
+/*! 
  * @brief GPIO control structure containing all configuration for a GPIO pin
- *
+ * 
  * This structure holds the necessary information to configure and control a GPIO pin.
  * It should be populated before passing to gpio_init().
  */

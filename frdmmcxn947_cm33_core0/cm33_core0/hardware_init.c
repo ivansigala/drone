@@ -29,8 +29,14 @@ void BOARD_InitHardware(void)
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom1Clk, 1u);
 	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM1);
 
+    /* FLEXCOMM2 → BME280 SPI bus (1 MHz). 12 MHz source is plenty. */
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom2Clk, 1u);
-	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM2);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM2);
+
+    /* FLEXCOMM3 → BNO085 IMU SPI bus (2 MHz). Uses FRO_HF_DIV to match
+     * the IMU project, which gives plenty of margin for the 2 MHz SCK. */
+    CLOCK_SetClkDiv(kCLOCK_DivFlexcom3Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM3);
 
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom7Clk, 1u);
 	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM7);

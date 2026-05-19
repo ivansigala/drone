@@ -28,19 +28,33 @@ mcux_add_source(
             mcxn_drivers/uart_driver_mcxn947.c
             mcxn_drivers/debug_uart_mcxn947.c
             mcxn_drivers/gpio_driver_mcxn947.c
+            mcxn_drivers/spi_driver_mcxn947.c
+            kalman_z/kalman_z.c
+            sensors/bno_08x/bno_08x.c
+            sensors/bno_08x/sht_lib/euler.c
+            sensors/bno_08x/sht_lib/sh2.c
+            sensors/bno_08x/sht_lib/sh2_SensorValue.c
+            sensors/bno_08x/sht_lib/sh2_util.c
+            sensors/bno_08x/sht_lib/shtp.c
+            sensors/vlx_esp32/vlx_esp32.c
 )
 
 mcux_add_macro(
     "MCXN947=1"
+    CC "-DPRINTF_FLOAT_ENABLE=1"
 )
 
 
 mcux_add_include(
-    INCLUDES . 
+    INCLUDES .
              mcxn_drivers/
              drone_drivers/dshot/
              drone_drivers/rc/
              drone_drivers/control/
+             kalman_z/
+             sensors/bno_08x/
+             sensors/bno_08x/sht_lib/
+             sensors/vlx_esp32/
 )
 mcux_convert_binary(BINARY ${APPLICATION_BINARY_DIR}/${MCUX_SDK_PROJECT_NAME}.bin)
 

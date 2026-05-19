@@ -19,12 +19,21 @@
 #include "app.h"
 
 /* user includes. */
+#include "kalman_z.h"
+#include "bno_08x.h"
+#include "vlx_esp32.h"
 #include "rc_fsia6B.h"
 #include "dshot.h"
 #include "pid.h"
+#include "dynamics.h"
+#include "euler.h"
 #include "timer_driver_mcxn947.h"
 #include "debug_uart_mcxn947.h"
 #include "gpio_driver_mcxn947.h"
+
+/* Macro helper to print negative values */
+#define SIGN_STR(x)        ((x) < 0.0f ? "-" : "")
+#define ABS_F(x)           ((x) < 0.0f ? -(x) : (x))
 
 /* Baud rate for the non-blocking debug stream (LPUART4 -> USB-CDC -> MATLAB). */
 #define DEBUG_UART_BAUDRATE 115200U
@@ -65,8 +74,8 @@
 #define PID_KP          0.5f
 #define PID_KI          0.0f
 #define PID_KD          0.0f
-#define PID_I_MIN      -70.0f
-#define PID_I_MAX       70.0f
+#define PID_I_MIN      -100.0f
+#define PID_I_MAX       100.0f
 
 /*
  * Error deadband for the speed PID (rad/s).
@@ -84,6 +93,10 @@
  */
 #define PID_ERROR_DEADBAND_RAD_S  10.5f
 
+/*************************************************************************
+ * Kalman-Z filter config
+ *************************************************************************/
+
 /*
  * Below this target speed, the control loop short-circuits to "motor
  * off" -- it sends DSHOT throttle = 0 (true off, motor freewheels) and
@@ -92,6 +105,127 @@
  * around a non-zero setpoint never accidentally trips the off-case.
  */
 #define TARGET_OFF_THRESHOLD_RAD_S  20.0f
+
+/*
+ * RC channel 7 acts as a hard motor-enable switch.
+ *
+ *   CH7 ≈ 1000 us  →  motors are FORCED OFF (s_motor_cmd[i] = 0). The
+ *                     PID state is flushed every tick while the switch
+ *                     is in this position so the integral error cannot
+ *                     accumulate against the (always-zero) error and
+ *                     spike the moment the pilot flips back to 2000.
+ *
+ *   CH7 ≈ 2000 us  →  motors are ARMED; normal speed-PID control runs.
+ *
+ * A single midpoint threshold (1500 us) is used. The FS-i6 transmitter
+ * snaps CH7 between 1000 and 2000 with a two-position switch, so the
+ * channel value never sits near the threshold for long -- no hysteresis
+ * is needed.
+ */
+#define RC_CH7_ENABLE_THRESHOLD_US  1500U
+
+/*
+ * Tilt failsafe — uses the BNO085 rotation vector to detect when the
+ * drone has rolled/pitched beyond a safe angle and forces motors off
+ * through the same disarm code path as CH7.
+ *
+ *   tilt_angle = acos(1 - 2*(qi² + qj²))
+ *
+ * where (qreal, qi, qj, qk) is the body→world quaternion delivered by
+ * the BNO085 rotation-vector report. The (3,3) element of the
+ * corresponding rotation matrix is (1 - 2(qi² + qj²)) = cos(tilt), the
+ * cosine of the angle between body-Z and world-Z. Comparing against a
+ * pre-computed cosf(10°) avoids an acosf() in the hot path.
+ *
+ * The failsafe LATCHES: once tripped, motors stay disarmed until the
+ * pilot flips CH7 to the disarm position (which clears the latch) and
+ * then re-arms. This prevents motor-cmd chatter from a tilt that
+ * hovers around the threshold and forces a deliberate pilot ack after
+ * a crash event.
+ */
+#define TILT_FAILSAFE_THRESHOLD_DEG   10.0f
+#define TILT_FAILSAFE_COS_THRESHOLD   0.93969262078f   /* cosf(10° * π/180) */
+
+/*
+ * Pilot reference scaling for the outer SMC loop.
+ *
+ *   CH1 (roll  reference) :  [1000, 2000] us  →  [-10°, +10°]   in rad
+ *   CH2 (Z     reference) :  [1000, 2000] us  →  [   0,  0.2]  m
+ *   CH3 (pitch reference) :  [1000, 2000] us  →  [-10°, +10°]   in rad
+ *   yaw reference         :  constant 0 rad
+ *
+ * Stick values outside [1000, 2000] us are clamped to the corresponding
+ * reference limits so a glitched packet cannot command an extreme
+ * attitude or altitude.
+ *
+ * Z range is intentionally tight (20 cm above take-off) — the VL53L0X
+ * is most accurate in its near-field band, and limiting the commandable
+ * altitude keeps the drone within the sensor's high-confidence range
+ * during early bench / hover testing.
+ */
+#define DEG_TO_RAD            0.017453292519943295f
+#define ATTITUDE_REF_MAX_RAD  (10.0f * DEG_TO_RAD)
+#define Z_REF_MAX_M           0.20f
+#define RC_PULSE_MID_US       1500.0f
+#define RC_PULSE_HALF_US      500.0f
+#define RC_PULSE_MIN_US       1000.0f
+#define RC_PULSE_RANGE_US     1000.0f
+
+/*
+ * IMU staleness failsafe.
+ *
+ * The SH2 callback timestamps every rotation-vector and gyroscope
+ * update. The control loop forces the disarm path if the IMU has
+ * been silent for more than IMU_STALE_TIMEOUT_MS, so a frozen sensor
+ * (I²C glitch, crash, power dip) can't keep feeding stale attitude
+ * into the SMC. 50 ms is five expected 100 Hz cycles — long enough
+ * to absorb normal jitter, short enough to react before a runaway.
+ *
+ * Unlike the tilt latch, IMU staleness clears automatically the
+ * instant a fresh sample arrives. It does NOT clear the tilt latch
+ * (only a CH7 disarm does).
+ */
+#define IMU_STALE_TIMEOUT_MS  50U
+
+#define IMU_NOTIFY_BIT            (1u << 0)
+
+/* -----------------------------------------------------------------------
+ *  Kalman tuning  —  VLX (ESP32 / VL53L0X bridge) measurement source.
+ *  Constants mirror frdmmcxn947_freertos_imu/main.c exactly.
+ *
+ *  dt        : SH2 linear-accel reports at 100 Hz, so each predict
+ *              advances the filter by 10 ms.
+ *  KZ_R_Z    : variance of the VLX Z measurement [m²].  VL53L0X 1σ ≈
+ *              1.6 mm after ESP-NOW jitter is factored in.
+ *  σ_az²     : variance of (v_k − v_{k−1})/dt from the BNO085 linear-accel
+ *              stream; feeds the kinematic block of Q.
+ *  q_bias    : Allan-variance slope for the world-Z accel bias —
+ *              155 windows of 100 samples (see accel_bias_allan.m).
+ *
+ *  Q is decomposed as
+ *      Q = σ_az² · [[dt⁴/4, dt³/2, 0],
+ *                   [dt³/2, dt²,   0],
+ *                   [0,     0,     0]]
+ *        +         [[0, 0, 0],
+ *                   [0, 0, 0],
+ *                   [0, 0, q_b]]
+ *  and the resulting matrix is pre-computed for dt = 10 ms so the SensorTask
+ *  doesn't have to rebuild it at runtime.
+ * --------------------------------------------------------------------- */
+#define KZ_DT                     0.010f          /* fixed predict period [s] (100 Hz)      */
+#define KZ_R_Z                    2.427409e-06f   /* var(z_meas) — VLX 1σ ≈ 0.0016 m         */
+
+static const float32_t KZ_Q[9] = {
+    /* row 0: h / {h, v, b}    —   σ_az²·dt⁴/4,  σ_az²·dt³/2,  0      */
+    1.054996e-13f,   2.109992e-11f,   0.0f,
+    /* row 1: v / {h, v, b}    —   σ_az²·dt³/2,  σ_az²·dt²,    0      */
+    2.109992e-11f,   4.219983e-09f,   0.0f,
+    /* row 2: b / {h, v, b}    —   0,            0,            q_bias */
+    0.0f,            0.0f,            1.144956e-08f
+};
+
+/* Debug-UART print rate for the Kalman-Z output. 50 Hz = every 20 ms. */
+#define KALMAN_Z_PRINT_PERIOD_MS  20U
 
 /*******************************************************************************
  * Definitions
@@ -102,6 +236,7 @@
 #define MOTOR_task_PRIORITY 4
 #define CONTROL_task_PRIORITY 4
 #define SENSOR_task_PRIORITY 4
+#define sensor_task_PRIORITY 2
 
 /*******************************************************************************
  * Prototypes
@@ -110,6 +245,7 @@ static void RCParserTask(void *pvParameters);
 static void ESCTelemetryTask(void *pvParameters);
 static void DSHOTGeneratorTask(void *pvParameters);
 static void ControlLoopTask(void *pvParameters);
+static void SensorTask(void *pvParameters);
 
 void RC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t status, void *userData);
 void ESC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t status, void *userData);
@@ -121,11 +257,16 @@ void ESC_Callback(LPUART_Type *base, lpuart_edma_handle_t *handle, status_t stat
 AT_NONCACHEABLE_SECTION_INIT(uint8_t g_rc_rxBuffer[FS_IA6B_FRAME_SIZE]) = {0};
 AT_NONCACHEABLE_SECTION_INIT(uint8_t g_esc_rxBuffer[DSHOT_TELEMETRY_FRAME_SIZE]) = {0};
 
+/* Sensor handles */
+imu_ctrl_t     imu;
+vlx_ctrl_t     vlx;            /* ESP32 SPI-slave VLX bridge — replaces BME280 */
+
 /* Task handle for notifications */
 TaskHandle_t rcParserTaskHandle      = NULL;
 TaskHandle_t escParserTaskHandle     = NULL;
 TaskHandle_t dshotGeneratorTaskHandle = NULL;
 TaskHandle_t controlLoopTaskHandle   = NULL;
+TaskHandle_t   sensorTaskHandle = NULL;
 
 /* Queues */
 QueueHandle_t rcChannelQueue  = NULL;
@@ -155,6 +296,62 @@ static volatile uint16_t           s_motor_cmd[MAX_SUPPORTED_MOTORS]   = {0};
  */
 static volatile float              s_motor_target_omega[MAX_SUPPORTED_MOTORS] = {0};
 
+/*
+ * Tilt failsafe latch. Set by sh2_sensor_callback() when the rotation
+ * vector reports a tilt angle greater than TILT_FAILSAFE_THRESHOLD_DEG.
+ * Cleared by ControlLoopTask only when it observes a CH7 disarm
+ * (CH7 < RC_CH7_ENABLE_THRESHOLD_US), so the pilot must consciously
+ * cycle the kill switch before the drone can be re-armed.
+ *
+ * Single-byte writes/reads are naturally atomic on Cortex-M33 so no
+ * mutex is needed between the SH2 callback and the control loop.
+ */
+static volatile bool s_tilt_failsafe_latched = false;
+
+/*
+ * Latest attitude estimate and body-frame angular rates published by
+ * the BNO085 SH2 callback, consumed by ControlLoopTask each tick to
+ * build the 8-state vector for the SMC dynamics.
+ *
+ *   s_roll / s_pitch / s_yaw   : ZYX-like Euler angles [rad], derived
+ *                                from the rotation-vector quaternion
+ *                                inside sh2_sensor_callback. Match the
+ *                                dynamics' Lambda convention (see
+ *                                dynamics.c: roll-pitch-yaw with yaw
+ *                                applied first).
+ *   s_omega_x / y / z          : Calibrated gyroscope output [rad/s],
+ *                                body-frame. The control loop converts
+ *                                these to Euler rates (droll/dpitch/
+ *                                dyaw) via Lambda^-1 before handing the
+ *                                state vector to the dynamics module.
+ *
+ * Each float is 32-bit aligned so individual writes/reads are atomic
+ * on Cortex-M33; the three angles (and the three rates) can drift one
+ * sample out of step relative to each other, but at the 100 Hz IMU /
+ * 100 Hz control cadence that is inconsequential.
+ */
+static volatile float s_roll    = 0.0f;
+static volatile float s_pitch   = 0.0f;
+static volatile float s_yaw     = 0.0f;
+static volatile float s_omega_x = 0.0f;
+static volatile float s_omega_y = 0.0f;
+static volatile float s_omega_z = 0.0f;
+
+/*
+ * Freshness counters for the IMU streams used by ControlLoopTask.
+ *
+ *   s_imu_last_update_ms : LPTMR0 millisecond timestamp of the most
+ *                          recent rotation-vector OR gyroscope sample.
+ *                          ControlLoopTask compares this against
+ *                          timer_get_ms() to detect a stuck IMU.
+ *   s_imu_ever_received  : starts false and flips true on the first
+ *                          IMU sample. Avoids treating "no sample
+ *                          yet" as "fresh sample at t=0" before the
+ *                          BNO085 has come up.
+ */
+static volatile uint32_t s_imu_last_update_ms = 0U;
+static volatile bool     s_imu_ever_received  = false;
+
 /* ESC Handle */
 dshotSystem_t esc;
 
@@ -165,24 +362,13 @@ volatile uint8_t g_erpm_high = 0;
 
 static volatile uint8_t  s_pending_motor_id   = 0xFF;   /* 0xFF = idle */
 static volatile bool     s_response_in_flight = false;
+static volatile bool g_kalman_ready = false;
 
 timer_ctrl_t timer_0 ={
     .timer_id = 0,
     .frequency = 400
 };
 
-timer_ctrl_t timer_1 ={
-    .timer_id = 1,
-    .frequency = 100
-};
-
-
-static gpio_ctrl_t gpio_timer_tracker = {
-    .gpio_base = GPIO0,
-    .port_base = PORT0,
-    .pin = 23,
-    .dir = gpio_output
-};
 
 /*******************************************************************************
  * Code
@@ -228,6 +414,154 @@ void timer_0_callback(void *args) {
 
 }
 
+void IMU_Update_Callback(void)
+{
+    gpio_clear_interrupt_flag(imu.gpio_event.gpio_base, imu.gpio_event.pin);
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (sensorTaskHandle != NULL)
+    {
+        xTaskNotifyFromISR(sensorTaskHandle, IMU_NOTIFY_BIT,
+                           eSetBits, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+}
+
+/*!
+ * @brief SH2 sensor callback — decoded inside the bno_08x driver service
+ *        loop.  Drives the Kalman filter:
+ *
+ *          SH2_ROTATION_VECTOR    → kalman_z_set_attitude (body→world)
+ *          SH2_LINEAR_ACCELERATION → kalman_z_predict     (100 Hz)
+ *
+ *        Both branches are gated behind g_kalman_ready so the filter is
+ *        only touched after SensorTask has finished kalman_z_init().
+ */
+void sh2_sensor_callback(void *cookie, sh2_SensorEvent_t *event)
+{
+    (void)cookie;
+    sh2_SensorValue_t sensorValue;
+
+    if (sh2_decodeSensorEvent(&sensorValue, event) != SH2_OK) {
+        return;
+    }
+
+    /* Never call into the filter before it has been initialised. */
+    if (!g_kalman_ready) {
+        return;
+    }
+
+    if (sensorValue.sensorId == SH2_ROTATION_VECTOR) {
+        sh2_RotationVectorWAcc_t *rv = &sensorValue.un.rotationVector;
+        /* Push the latest body→world quaternion into the filter so the
+         * next predict() can project body-frame accel onto world Z.        */
+        kalman_z_set_attitude(rv->i, rv->j, rv->k, rv->real);
+
+        /*
+         * Tilt failsafe.
+         *
+         * The (3,3) element of the rotation matrix built from the
+         * body→world quaternion (w, i, j, k) is
+         *
+         *     R33 = 1 - 2*(i² + j²) = cos(tilt)
+         *
+         * where 'tilt' is the angle between the drone's body Z-axis
+         * and the world Z-axis (i.e. how far off level the drone is,
+         * independent of yaw). When that cosine drops below
+         * cosf(10°) the drone has tilted past the safe limit and we
+         * latch the failsafe; ControlLoopTask picks it up on its
+         * next iteration and runs the CH7 disarm path. The latch
+         * stays set until the pilot toggles CH7 to disarm.
+         */
+        float cos_tilt = 1.0f - 2.0f * (rv->i * rv->i + rv->j * rv->j);
+        if (cos_tilt < TILT_FAILSAFE_COS_THRESHOLD) {
+            s_tilt_failsafe_latched = true;
+        }
+
+        /*
+         * Euler-angle extraction for the SMC dynamics module.
+         *
+         * Use the existing q_to_{roll,pitch,yaw} helpers from euler.c
+         * (rather than q_to_ypr, whose header/implementation argument
+         * order disagree). The three values feed states[2..4] of the
+         * 8-state vector and seed dynamics_update_trig() each tick.
+         * Units: radians.
+         *
+         *   IMU mounting note
+         *   -----------------
+         *   The BNO085 is rotated 90° about the body-Z axis on this
+         *   airframe, so the sensor's X-axis aligns with the drone's
+         *   Y-axis and vice versa.  As a result, what the quaternion
+         *   decomposition calls "roll" (rotation about IMU-X) is
+         *   physically the drone's pitch, and the IMU's "pitch" is the
+         *   drone's roll.  We swap them here so the SMC sees angles in
+         *   the airframe's reference frame.  Yaw (rotation about body-Z)
+         *   is unaffected by a yaw-only re-mounting.
+         *
+         *   If a future log shows the swapped axis with the wrong sign
+         *   (e.g. stick-right rolls the drone left), the IMU was rotated
+         *   the opposite way around Z — negate the appropriate line.
+         */
+        s_roll  = q_to_pitch(rv->real, rv->i, rv->j, rv->k);  /* drone roll ← IMU pitch */
+        s_pitch = q_to_roll (rv->real, rv->i, rv->j, rv->k);  /* drone pitch ← IMU roll */
+        s_yaw   = q_to_yaw  (rv->real, rv->i, rv->j, rv->k);
+
+        /* Freshness stamp for the staleness failsafe. */
+        s_imu_last_update_ms = timer_get_ms();
+        s_imu_ever_received  = true;
+
+        /* Tag "R" — quaternion components (body→world) used by the filter
+         * to rotate body-frame accel into world frame.  Order matches
+         * kalman_z_set_attitude: qreal, qi, qj, qk.                        */
+        // PRINTF("R: %s%.6f, %s%.6f, %s%.6f, %s%.6f\r\n",
+        //        SIGN_STR(rv->real), ABS_F(rv->real),
+        //        SIGN_STR(rv->i),    ABS_F(rv->i),
+        //        SIGN_STR(rv->j),    ABS_F(rv->j),
+        //        SIGN_STR(rv->k),    ABS_F(rv->k));
+    }
+    else if (sensorValue.sensorId == SH2_GYROSCOPE_CALIBRATED) {
+        /*
+         * Body-frame angular velocity from the BNO085 calibrated
+         * gyroscope (rad/s). Stored verbatim; ControlLoopTask
+         * converts to Euler rates via Lambda^-1 using the latest
+         * roll / pitch so the units match what the SMC attitude
+         * controller expects in states[5..7].
+         *
+         * Same IMU mounting note as in the rotation-vector branch:
+         * the BNO085 is rotated 90° about body-Z relative to the
+         * airframe, so the sensor's ωx is rotation about the drone's
+         * Y-axis (pitch rate) and the sensor's ωy is rotation about
+         * the drone's X-axis (roll rate).  Swap them here so the
+         * gyro feed stays consistent with the swapped Euler angles —
+         * otherwise the dynamics module's Lambda^-1 step would mix
+         * mismatched-axis rates with re-labelled angles.  ωz is
+         * unchanged because the sensor's Z-axis still aligns with
+         * the drone's Z-axis after a yaw-only rotation.
+         */
+        sh2_Gyroscope_t *g = &sensorValue.un.gyroscope;
+        s_omega_x = g->y;   /* drone roll rate  ← IMU ωy */
+        s_omega_y = g->x;   /* drone pitch rate ← IMU ωx */
+        s_omega_z = g->z;
+
+        /* Freshness stamp for the staleness failsafe. */
+        s_imu_last_update_ms = timer_get_ms();
+        s_imu_ever_received  = true;
+    }
+    else if (sensorValue.sensorId == SH2_LINEAR_ACCELERATION) {
+        sh2_Accelerometer_t *a = &sensorValue.un.linearAcceleration;
+        /* Predict step at the BNO085 linear-accel report rate (100 Hz).    */
+        kalman_z_predict(a->x, a->y, a->z);
+
+        /* Tag "A" — body-frame linear acceleration (gravity removed).
+         * Combined with the most recent R-line quaternion this becomes
+         * a_z_world, which is the filter's predict-step input.             */
+        // PRINTF("A: %s%.6f, %s%.6f, %s%.6f\r\n",
+        //        SIGN_STR(a->x), ABS_F(a->x),
+        //        SIGN_STR(a->y), ABS_F(a->y),
+        //        SIGN_STR(a->z), ABS_F(a->z));
+    }
+}
+
 /*!
  * @brief Application entry point.
  */
@@ -235,15 +569,8 @@ int main(void)
 {
     /* Init board hardware. */
     BOARD_InitHardware();
-    
-    gpio_init(&gpio_timer_tracker);
 
-    // GETCHAR();
-
-    /* Take over LPUART4 for non-blocking telemetry. After this call,
-     * PRINTF must NOT be used: the debug-console handle is no longer
-     * consistent with the hardware state.                              */
-    debug_uart_init(DEBUG_UART_BAUDRATE);
+    // debug_uart_init(DEBUG_UART_BAUDRATE);
 
     rc_init(RC_Callback);
     
@@ -252,7 +579,7 @@ int main(void)
     timer_init(&timer_0);
     timer_attach_callback(&timer_0, timer_0_callback);
 
-    debug_uart_print("Initialization complete. Starting scheduler...\r\n");
+    // debug_uart_print("Initialization complete. Starting scheduler...\r\n");
 
     /* Create Queue to hold the parsed channels data (buffer size of 5 frames) */
     rcChannelQueue = xQueueCreate(5, sizeof(fs_ia6b_channels_t));
@@ -260,14 +587,14 @@ int main(void)
 
     if (rcChannelQueue == NULL || escChannelQueue == NULL)
     {
-        debug_uart_print("Queue creation failed!\r\n");
+        // debug_uart_print("Queue creation failed!\r\n");
         while (1);
     }
 
     if (xTaskCreate(RCParserTask, "rc_task", configMINIMAL_STACK_SIZE + 50, &esc, RC_task_PRIORITY, &rcParserTaskHandle) !=
         pdPASS)
     {
-        debug_uart_print("Task creation failed (rc)!\r\n");
+        // debug_uart_print("Task creation failed (rc)!\r\n");
         while (1)
             ;
     }
@@ -275,7 +602,7 @@ int main(void)
     if (xTaskCreate(ESCTelemetryTask , "esc_task", configMINIMAL_STACK_SIZE + 50, &esc, RC_task_PRIORITY, &escParserTaskHandle) !=
         pdPASS)
     {
-        debug_uart_print("Task creation failed (esc)!\r\n");
+        // debug_uart_print("Task creation failed (esc)!\r\n");
         while (1)
             ;
     }
@@ -283,20 +610,35 @@ int main(void)
     if (xTaskCreate(DSHOTGeneratorTask , "motor_task", configMINIMAL_STACK_SIZE + 200, &esc, MOTOR_task_PRIORITY, &dshotGeneratorTaskHandle) !=
         pdPASS)
     {
-        debug_uart_print("Task creation failed (motor)!\r\n");
+        // debug_uart_print("Task creation failed (motor)!\r\n");
         while (1)
             ;
     }
 
-    /* Extra stack covers 4× pid_state_t (~32 B each) plus local floats. */
-    if (xTaskCreate(ControlLoopTask, "ctrl_task", configMINIMAL_STACK_SIZE + 150, &esc, CONTROL_task_PRIORITY, &controlLoopTaskHandle) !=
+    if (xTaskCreate(ControlLoopTask, "ctrl_task", 1024, &esc, CONTROL_task_PRIORITY, &controlLoopTaskHandle) !=
         pdPASS)
     {
-        debug_uart_print("Task creation failed (control)!\r\n");
+        // debug_uart_print("Task creation failed (control)!\r\n");
         while (1)
             ;
     }
-    
+
+    if (xTaskCreate(SensorTask, "Sensor_task", 1024, NULL,
+                    sensor_task_PRIORITY, &sensorTaskHandle) != pdPASS)
+    {
+       // PRINTF("Task creation failed!.\r\n");
+        while (1)
+            ;
+    }
+
+    bno_08x_init(&imu, IMU_Update_Callback); /* Initialize the IMU*/
+
+
+    if (vlx_init(&vlx) != kStatus_Success)
+    {
+        // PRINTF("VLX init failed!\r\n");
+    }
+
 
     vTaskStartScheduler();
     for (;;)
@@ -305,35 +647,16 @@ int main(void)
 
 /*!
  * @brief PID speed-control loop — runs at PID_FREQUENCY_HZ (100 Hz).
- *
- * Architecture
- * ────────────
  *   Inputs  : s_latest_rc  (written by RCParserTask on every valid frame)
  *             esc->motor[i] telemetry (written by ESCTelemetryTask)
  *   Outputs : s_motor_cmd[i]  (consumed by DSHOTGeneratorTask at 400 Hz)
  *
- * Control law (per motor)
- * ───────────────────────
- *   1. Map RC CH3 (throttle stick, 800–2200 µs) to a target angular
- *      velocity in rad/s, linearly scaled to [0, MAX_MOTOR_OMEGA_RAD_S].
- *   2. Read the motor's actual omega from the last validated telemetry
- *      frame via dshot_motor_omega_rad_s().
- *   3. Run pid_compute() → normalised output in [-1, 1].
- *   4. Map output to DSHOT throttle [DSHOT_MIN_THROTTLE, DSHOT_MAX_THROTTLE].
- *   5. Apply a throttle deadband: if the stick is below THROTTLE_DEADBAND_NORM
- *      the motors are commanded off (throttle = 0) and the integrators are
- *      reset so there is no windup across an idle period.
- *
- * Gains (PID_KP / PID_KI / PID_KD) are compile-time constants at the top
- * of this file.  Tune them on the bench before flight.
  */
 static void ControlLoopTask(void *pvParameters)
 {
     dshotSystem_t *esc = (dshotSystem_t *)pvParameters;
     dshotMotor_t  *motors[MAX_SUPPORTED_MOTORS] =
-        { &esc->motor0, &esc->motor1, &esc->motor2, &esc->motor3 };
-
-    static uint32_t samples = 0;
+        { &esc->motor2, &esc->motor3, &esc->motor0, &esc->motor1 };
 
     pid_state_t pid[MAX_SUPPORTED_MOTORS];
    
@@ -341,37 +664,26 @@ static void ControlLoopTask(void *pvParameters)
     pid_init(&pid[1], 0.00012, 0.0080, 0.000003, PID_I_MIN, PID_I_MAX, PID_ERROR_DEADBAND_RAD_S);
     pid_init(&pid[2], 0.00012, 0.0080, 0.000004, PID_I_MIN, PID_I_MAX, PID_ERROR_DEADBAND_RAD_S);
     pid_init(&pid[3], 0.00010, 0.0080, 0.000004, PID_I_MIN, PID_I_MAX, PID_ERROR_DEADBAND_RAD_S);
-    /*
-     * Per-motor "last telemetry sequence number we acted on". When the
-     * current motors[i]->telemetry_seq is unchanged from the value we
-     * cached here, no new measurement has arrived since the previous
-     * tick -- we skip the PID for that motor and hold the previous
-     * command. Avoids the throttle spike caused by stale (or
-     * dshot_motor_omega_rad_s()-returned-0) measurements.
-     */
+
+
     uint32_t last_seq[MAX_SUPPORTED_MOTORS]      = {0};
     uint8_t  stale_ticks[MAX_SUPPORTED_MOTORS]   = {0};
 
-    /*
-     * After this many consecutive control ticks with no fresh
-     * telemetry, fall back to a safe minimum throttle. Prevents a
-     * permanently dead ESC from being held at whatever the last
-     * pre-fault command was.
-     */
     const uint8_t kStaleFailsafeTicks = 5;   /* 5 * 10 ms = 50 ms */
+
+    bool  was_disarmed_prev_tick = true;
+    float z_ref_origin_m         = 0.0f;
+    float yaw_ref_origin_rad     = 0.0f;
 
     TickType_t      xLastWakeTime = xTaskGetTickCount();
     const TickType_t xPeriod      = pdMS_TO_TICKS(1000U / (uint32_t)PID_FREQUENCY_HZ);
 
     for (;;)
     {
-        /* Pace the loop precisely at PID_FREQUENCY_HZ regardless of how
-         * long the computation takes (as long as it stays within one period). */
+  
         vTaskDelayUntil(&xLastWakeTime, xPeriod);
 
-        gpio_toggle_output(&gpio_timer_tracker);
 
-        /* Hold commands at zero until every motor has confirmed telemetry. */
         if (!esc->armed)
         {
             for (uint8_t i = 0; i < MAX_SUPPORTED_MOTORS; ++i)
@@ -379,49 +691,133 @@ static void ControlLoopTask(void *pvParameters)
             continue;
         }
 
-        // float ch3_us      = (float)s_latest_rc.CH3.u16;
-        // float throttle_norm = (ch3_us - (float)RC_CHANNEL_MIN) /
-        //                       (float)(RC_CHANNEL_MAX - RC_CHANNEL_MIN);
+        bool ch7_disarmed     = (s_latest_rc.CH7.u16 < RC_CH7_ENABLE_THRESHOLD_US);
+        bool tilt_failsafe    = s_tilt_failsafe_latched;
+        bool imu_stale        = !s_imu_ever_received ||
+                                ((timer_get_ms() - s_imu_last_update_ms) >
+                                 IMU_STALE_TIMEOUT_MS);
 
-        samples++;
+        if (ch7_disarmed) {
+            s_tilt_failsafe_latched = false;
+        }
 
-        /* Clamp to [0, 1] in case of a slightly out-of-range transmission. */
-        // if (throttle_norm < 0.0f) throttle_norm = 0.0f;
-        // if (throttle_norm > 1.0f) throttle_norm = 1.0f;
+        if (ch7_disarmed || tilt_failsafe || imu_stale)
+        {
+            for (uint8_t i = 0; i < MAX_SUPPORTED_MOTORS; ++i)
+            {
+                float measured_omega = dshot_motor_omega_rad_s(motors[i]);
+
+                pid[i].integral_err  = 0.0f;
+                pid[i].prev_measured = measured_omega;
+                pid[i].last_output   = 0.0f;
+
+                s_motor_cmd[i]       = 0U;
+                s_motor_target_omega[i] = 0.0f;
+
+                last_seq[i]    = motors[i]->telemetry_seq;
+                stale_ticks[i] = 0;
+            }
+            was_disarmed_prev_tick = true;
+            continue;
+        }
 
         
-        // if (throttle_norm < THROTTLE_DEADBAND_NORM)
-        // {
-        //     for (uint8_t i = 0; i < MAX_SUPPORTED_MOTORS; ++i)
-        //     {
-        //         pid[i].integral_err = 0.0f;  /* reset integral to prevent windup during idle */
-        //         pid[i].prev_measured = 0.0f; /* reset derivative term to prevent spikes on re-arming */
-        //         pid[i].last_output = 0.0f;   /* for telemetry, not used in control */
-        //         s_motor_cmd[i] = 0U;
-        //     }
-        //     continue;
-        // }
 
-        float time_sec = (float)samples * CONTROL_LOOP_PERIOD_S;
-        float target_omega = 600.0f + 200.0f * sinf(2.0f * 3.1415926f * 1.0f * time_sec);
+        if (was_disarmed_prev_tick) {
+            z_ref_origin_m     = kalman_z_get_altitude();
+            yaw_ref_origin_rad = s_yaw;
+            was_disarmed_prev_tick = false;
+        }
+
+        float roll_ref  = (((float)s_latest_rc.CH1.u16 - RC_PULSE_MID_US) /
+                           RC_PULSE_HALF_US) * ATTITUDE_REF_MAX_RAD;
+        float pitch_ref = (((float)s_latest_rc.CH3.u16 - RC_PULSE_MID_US) /
+                           RC_PULSE_HALF_US) * ATTITUDE_REF_MAX_RAD;
+        float z_stick   = (((float)s_latest_rc.CH2.u16 - RC_PULSE_MIN_US) /
+                           RC_PULSE_RANGE_US) * Z_REF_MAX_M;
+
+        /* Clamp stick-derived offsets so an RC glitch can't command an extreme. */
+        if (roll_ref  >  ATTITUDE_REF_MAX_RAD) roll_ref  =  ATTITUDE_REF_MAX_RAD;
+        if (roll_ref  < -ATTITUDE_REF_MAX_RAD) roll_ref  = -ATTITUDE_REF_MAX_RAD;
+        if (pitch_ref >  ATTITUDE_REF_MAX_RAD) pitch_ref =  ATTITUDE_REF_MAX_RAD;
+        if (pitch_ref < -ATTITUDE_REF_MAX_RAD) pitch_ref = -ATTITUDE_REF_MAX_RAD;
+        if (z_stick   >  Z_REF_MAX_M)          z_stick   =  Z_REF_MAX_M;
+        if (z_stick   <  0.0f)                 z_stick   =  0.0f;
+
+        float z_ref   = z_ref_origin_m + z_stick;
+        float yaw_ref = yaw_ref_origin_rad;
+
+        float roll  = s_roll;
+        float pitch = s_pitch;
+        float yaw   = s_yaw;
+        float wx = s_omega_x;
+        float wy = s_omega_y;
+        float wz = s_omega_z;
+
+        float sr = sinf(roll);
+        float cr = cosf(roll);
+        float sp = sinf(pitch);
+        float cp = cosf(pitch);
+        float inv_cp = (fabsf(cp) > 1.0e-3f) ? (1.0f / cp) : 0.0f;
+        float tp     = sp * inv_cp;
+
+        float droll  = wx + tp * (sr * wy + cr * wz);
+        float dpitch =      cr * wy - sr * wz;
+        float dyaw   = inv_cp * (sr * wy + cr * wz);
+
+        float states[8] = {
+            kalman_z_get_altitude(),  /* states[0] = z      */
+            kalman_z_get_velocity(),  /* states[1] = dz     */
+            roll,                     /* states[2] = roll   */
+            pitch,                    /* states[3] = pitch  */
+            yaw,                      /* states[4] = yaw    */
+            droll,                    /* states[5] = droll  */
+            dpitch,                   /* states[6] = dpitch */
+            dyaw                      /* states[7] = dyaw   */
+        };
+
+        /* Refresh the cached trig used by both SMC stages. */
+        dynamics_update_trig(roll, pitch, yaw);
+
+
+        float w_meas_dyn[4] = {
+            dshot_motor_omega_rad_s(motors[1]),  /* CH1 motor (w0) */
+            dshot_motor_omega_rad_s(motors[2]),  /* CH2 motor (w1) */
+            dshot_motor_omega_rad_s(motors[0]),  /* CH3 motor (w2) */
+            dshot_motor_omega_rad_s(motors[3]),  /* CH4 motor (w3) */
+        };
+
+        float U[4];
+        U[0] = dynamics_compute_U0(states, z_ref);
+
+        float eta_ref[3] = { roll_ref, pitch_ref, yaw_ref };
+        float U_att[3];
+        dynamics_compute_attitude_control(states, eta_ref, w_meas_dyn, U_att);
+        U[1] = U_att[0];
+        U[2] = U_att[1];
+        U[3] = U_att[2];
+
+
+        float w_target_dyn[4];
+        dynamics_compute_dw(w_target_dyn, U);
+
+        float target_omega_per_index[MAX_SUPPORTED_MOTORS];
+        target_omega_per_index[1] = w_target_dyn[0];  /* CH1 motor */
+        target_omega_per_index[2] = w_target_dyn[1];  /* CH2 motor */
+        target_omega_per_index[0] = w_target_dyn[2];  /* CH3 motor */
+        target_omega_per_index[3] = w_target_dyn[3];  /* CH4 motor */
 
         for (uint8_t i = 0; i < MAX_SUPPORTED_MOTORS; ++i)
         {
-            /* Publish the setpoint for this motor so the telemetry task
-             * can include it in the debug-UART frame.                   */
+            float target_omega = target_omega_per_index[i];
+
+        
             s_motor_target_omega[i] = target_omega;
+
 
             float measured_omega = dshot_motor_omega_rad_s(motors[i]);
 
-            /*
-             * Off-case short circuit. The unidirectional ESC's smallest
-             * non-zero command (DSHOT_MIN_THROTTLE) keeps the motor
-             * spinning at idle (~135 rad/s on this bench), so we cannot
-             * "command zero" via PID output -- we have to bypass the
-             * mapping entirely. Resetting the integrator + prev_measured
-             * also prevents windup while the motor is intentionally off
-             * and avoids a derivative kick on the next non-zero target.
-             */
+
             if (target_omega < TARGET_OFF_THRESHOLD_RAD_S) {
                 pid[i].integral_err  = 0.0f;
                 pid[i].prev_measured = measured_omega;
@@ -445,21 +841,13 @@ static void ControlLoopTask(void *pvParameters)
             last_seq[i]    = cur_seq;
             stale_ticks[i] = 0;
 
-            /* pid_compute returns a normalised correction in [-1, 1].
-             * The library uses derivative-on-measurement so a step change
-             */
+     
             float pid_out = pid_compute(&pid[i],
                                         target_omega,
                                         measured_omega,
                                         CONTROL_LOOP_PERIOD_S);
 
-            /*
-             * Unidirectional throttle mapping for ESCs that only spin one
-             * way:
-             *
-             *   pid_out <= 0   →   t_norm = 0   →   cmd = DSHOT_MIN_THROTTLE
-             *   pid_out  = +1  →   t_norm = 1   →   cmd = DSHOT_MAX_THROTTLE
-             */
+
             float t_norm = pid_out;
             if (t_norm < 0.0f) t_norm = 0.0f;
             uint16_t cmd  = (uint16_t)((float)DSHOT_MIN_THROTTLE +
@@ -475,7 +863,7 @@ static void DSHOTGeneratorTask(void *pvParameters)
 {
     dshotSystem_t *esc = (dshotSystem_t *)pvParameters;
     dshotMotor_t *motors[MAX_SUPPORTED_MOTORS] =
-        { &esc->motor0, &esc->motor1, &esc->motor2, &esc->motor3 };
+        { &esc->motor2, &esc->motor3, &esc->motor0, &esc->motor1 };
     uint8_t next_telemetry_motor = 0;
 
     __disable_irq();
@@ -493,18 +881,11 @@ static void DSHOTGeneratorTask(void *pvParameters)
                 tm_motor = next_telemetry_motor;
                 next_telemetry_motor = (next_telemetry_motor + 1) % MAX_SUPPORTED_MOTORS;
 
-                /* Drain any stale notification from a callback that fired
-                 * AFTER the previous round timed out. Without this, the
-                 * ESC task would treat the carry-over notification as the
-                 * arrival of THIS new request's response. */
                 if (escParserTaskHandle != NULL) {
                     (void)xTaskNotifyStateClear(escParserTaskHandle);
                 }
 
-                /* Layer-2 hygiene: drain the LPUART RX FIFO so that any
-                 * late-arriving byte from a previous response cannot get
-                 * latched as the first byte of this transfer. Then arm
-                 * the EDMA fresh. */
+
                 esc_uart_flush();
                 esc_start_dma_rx(g_esc_rxBuffer, DSHOT_TELEMETRY_FRAME_SIZE);
 
@@ -520,13 +901,6 @@ static void DSHOTGeneratorTask(void *pvParameters)
             }
             __enable_irq();
 
-            /*
-             * Throttle gate: ESCTelemetryTask flips esc->armed only after
-             * every motor has returned at least one valid telemetry frame.
-             * Until then we hold all throttles at zero so the control loop
-             * cannot spin a motor that we don't yet know is present and
-             * talking back.
-             */
             if (esc->armed) {
                 for (uint8_t i = 0; i < MAX_SUPPORTED_MOTORS; ++i) {
                     motors[i]->dshot_control.throttle_u16 = s_motor_cmd[i];
@@ -562,10 +936,7 @@ static void RCParserTask(void *pvParameters)
             /* Check if the frame passes CRC and is successfully parsed */
             if (rc_parse_frame(g_rc_rxBuffer, &current_rc_frame) == kRC_StatusSucces)
             {
-                /* Publish the validated channel set so ControlLoopTask can
-                 * read the latest stick positions without a queue copy.
-                 * Each 16-bit channel field is written atomically so no mutex is needed here.
-                 */
+
                 s_latest_rc = current_rc_frame.channels;
 
             }
@@ -593,18 +964,11 @@ static void ESCTelemetryTask(void *pvParameters)
 {
     dshotSystem_t *esc = (dshotSystem_t *)pvParameters;
     dshotMotor_t *motors[MAX_SUPPORTED_MOTORS] =
-        { &esc->motor0, &esc->motor1, &esc->motor2, &esc->motor3 };
+
+        { &esc->motor2, &esc->motor3, &esc->motor0, &esc->motor1 };
     const TickType_t kFrameTimeout = pdMS_TO_TICKS(2);
 
-    /*
-     * Debug-UART telemetry payload, little-endian on the wire (15 bytes):
-     *
-     *   bytes 0..3    uint32  ts_ms          LPTMR0-derived timestamp [ms]
-     *   byte  4       uint8   motor_id       0..MAX_SUPPORTED_MOTORS-1
-     *   bytes 5..8    float32 omega_rad_s    measured angular velocity
-     *   bytes 9..12   float32 target_rad_s   setpoint from ControlLoopTask
-     *   bytes 13..14  uint16  throttle       last commanded DSHOT (0..2047)
-     */
+
     uint8_t payload[15];
 
     for (;;) {
@@ -634,15 +998,10 @@ static void ESCTelemetryTask(void *pvParameters)
                         if (esc->seen_mask ==
                             (uint8_t)((1U << MAX_SUPPORTED_MOTORS) - 1U)) {
                             esc->armed = true;
-                            debug_uart_print("ARMED: all motors confirmed.\r\n");
+                            // debug_uart_print("ARMED: all motors confirmed.\r\n");
                         }
                     }
 
-                    /* Stream the freshly-validated sample out the framed
-                     * debug UART. See `payload` declaration above for
-                     * the byte-by-byte layout. Non-blocking: a full
-                     * ring buffer drops the frame instead of stalling
-                     * this task.                                          */
                     {
                         
                         uint32_t ts_ms  = timer_get_ms();
@@ -656,9 +1015,9 @@ static void ESCTelemetryTask(void *pvParameters)
                         memcpy(&payload[9],  &target, sizeof(target));  /* 4 */
                         memcpy(&payload[13], &thr,    sizeof(thr));     /* 2 */
 
-                        (void)debug_uart_send_frame(
-                            DEBUG_UART_FRAME_ID_TELEMETRY,
-                            payload, sizeof(payload));
+                        // (void)debug_uart_send_frame(
+                        //     DEBUG_UART_FRAME_ID_TELEMETRY,
+                        //     payload, sizeof(payload));
                     }
 
                 } else {
@@ -690,6 +1049,74 @@ static void ESCTelemetryTask(void *pvParameters)
         /* Mark this round resolved -- generator can issue the next
          * request on the next timer tick. */
         s_response_in_flight = false;
+    }
+}
+
+/*!
+ * @brief Task responsible for processing the IMU reports.  Wakes on the
+ *        IMU HINT falling edge, drains all pending packets from the BNO085,
+ *        and lets sh2_sensor_callback() print the decoded rotation vector
+ *        and gyroscope samples.
+ */
+static void SensorTask(void *pvParameters)
+{
+    (void)pvParameters;
+
+    static bool sensors_configured = false;
+    uint32_t    notif_value        = 0;
+    status_t    result;
+
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+
+    kalman_z_init(KZ_Q, KZ_R_Z, KZ_DT);
+    g_kalman_ready = true;
+
+
+    result = bno_08x_start(sh2_sensor_callback);
+    if (result != kStatus_Success) {
+        //PRINTF("BNO085 SH2 session failed to open\r\n");
+        vTaskSuspend(NULL);
+    }
+
+
+    for (;;)
+    {
+        notif_value = 0;
+        xTaskNotifyWait(/* ulBitsToClearOnEntry */ 0,
+                        /* ulBitsToClearOnExit  */ IMU_NOTIFY_BIT,
+                        &notif_value,
+                        pdMS_TO_TICKS(100));
+
+        if (notif_value & IMU_NOTIFY_BIT)
+        {
+            /* Drain all packets the BNO has queued.  Bound the loop so a
+             * stuck-LOW HINT can't hang SensorTask.                       */
+            int drain_budget = 16;
+            do {
+                sh2_service();
+            } while (gpio_read_input(&imu.gpio_event) == 0 && --drain_budget > 0);
+        }
+
+
+        status_t vlx_status = vlx_read(&vlx);
+
+        /* First IMU reset is the trigger to enable the sensor reports. */
+        if (!sensors_configured && bno_08x_reset_occurred()) {
+            bno_08x_configure_sensors();
+            vTaskDelay(pdMS_TO_TICKS(200));   /* let reports start flowing */
+            sensors_configured = true;
+        }
+
+
+        if (vlx_status == kStatus_Success &&
+            vlx.data.status == VLX_STATUS_OK)
+        {
+            const float32_t z_raw_m = (float32_t)vlx.data.distance_mm * 0.001f;
+            kalman_z_update(z_raw_m);
+        }
+
     }
 }
 

@@ -204,8 +204,103 @@ void BOARD_InitPins(void)
 
                      /* Input Buffer Enable: Enables. */
                      | PORT_PCR_IBE(PCR_IBE_ibe1));
-                     
 
+    /* Configure SPI buses used by the IMU + barometer (added for the
+     * BNO085/BME280/Kalman-Z integration). The BNO085 also needs three
+     * dedicated GPIOs (RSTN, HINT, PS0/nWAKE) which the BNO driver
+     * configures itself via gpio_init() — see bno_08x_init().            */
+    LPSPI2_InitPins();   /* PORT4[0..3] — BME280 barometer (FC2)         */
+    LPSPI3_InitPins();   /* PORT1[12..15] — BNO085 IMU      (FC3)        */
+}
+
+/* FUNCTION ************************************************************************************************************
+ *
+ * Function Name : LPSPI3_InitPins
+ * Description   : Configures PORT1[12..15] as the BNO085 IMU SPI bus
+ *                 (LP_FLEXCOMM3, ALT3). SDO/SCK/SDI/PCS0.
+ *
+ * END ****************************************************************************************************************/
+void LPSPI3_InitPins(void)
+{
+    /* Enables the clock for PORT1: Enables clock */
+    CLOCK_EnableClock(kCLOCK_Port1);
+
+    /* SDO (FC3_P0) */
+    const port_pin_config_t port1_12_config = {
+        kPORT_PullUp, kPORT_LowPullResistor, kPORT_SlowSlewRate,
+        kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength, kPORT_MuxAlt3,
+        kPORT_InputBufferEnable, kPORT_InputNormal, kPORT_UnlockRegister};
+    PORT_SetPinConfig(PORT1, 12U, &port1_12_config);
+
+    /* SCK (FC3_P1) */
+    const port_pin_config_t port1_13_config = {
+        kPORT_PullUp, kPORT_LowPullResistor, kPORT_SlowSlewRate,
+        kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength, kPORT_MuxAlt3,
+        kPORT_InputBufferEnable, kPORT_InputNormal, kPORT_UnlockRegister};
+    PORT_SetPinConfig(PORT1, 13U, &port1_13_config);
+
+    /* SDI (FC3_P2) */
+    const port_pin_config_t port1_14_config = {
+        kPORT_PullUp, kPORT_LowPullResistor, kPORT_SlowSlewRate,
+        kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength, kPORT_MuxAlt3,
+        kPORT_InputBufferEnable, kPORT_InputNormal, kPORT_UnlockRegister};
+    PORT_SetPinConfig(PORT1, 14U, &port1_14_config);
+
+    /* PCS0 (FC3_P3) */
+    const port_pin_config_t port1_15_config = {
+        kPORT_PullUp, kPORT_LowPullResistor, kPORT_SlowSlewRate,
+        kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength, kPORT_MuxAlt3,
+        kPORT_InputBufferEnable, kPORT_InputNormal, kPORT_UnlockRegister};
+    PORT_SetPinConfig(PORT1, 15U, &port1_15_config);
+}
+
+/* FUNCTION ************************************************************************************************************
+ *
+ * Function Name : LPSPI2_InitPins
+ * Description   : Configures PORT4[0..3] as the BME280 barometer SPI bus
+ *                 (LP_FLEXCOMM2, ALT2). SDO/SCK/SDI/PCS0.
+ *
+ * END ****************************************************************************************************************/
+void LPSPI2_InitPins(void)
+{
+    /* Enables the clock for PORT4: Enables clock */
+    CLOCK_EnableClock(kCLOCK_Port4);
+
+    /* SDO (FC2_P0) */
+    const port_pin_config_t port4_0_config = {
+        kPORT_PullUp, kPORT_LowPullResistor, kPORT_SlowSlewRate,
+        kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength, kPORT_MuxAlt2,
+        kPORT_InputBufferEnable, kPORT_InputNormal, kPORT_UnlockRegister};
+    PORT_SetPinConfig(PORT4, 0U, &port4_0_config);
+
+    /* SCK (FC2_P1) */
+    const port_pin_config_t port4_1_config = {
+        kPORT_PullUp, kPORT_LowPullResistor, kPORT_SlowSlewRate,
+        kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength, kPORT_MuxAlt2,
+        kPORT_InputBufferEnable, kPORT_InputNormal, kPORT_UnlockRegister};
+    PORT_SetPinConfig(PORT4, 1U, &port4_1_config);
+
+    /* SDI (FC2_P2) */
+    const port_pin_config_t port4_2_config = {
+        kPORT_PullUp, kPORT_LowPullResistor, kPORT_SlowSlewRate,
+        kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength, kPORT_MuxAlt2,
+        kPORT_InputBufferEnable, kPORT_InputNormal, kPORT_UnlockRegister};
+    PORT_SetPinConfig(PORT4, 2U, &port4_2_config);
+
+    /* PCS0 (FC2_P3) */
+    const port_pin_config_t port4_3_config = {
+        kPORT_PullUp, kPORT_LowPullResistor, kPORT_SlowSlewRate,
+        kPORT_PassiveFilterDisable, kPORT_OpenDrainDisable,
+        kPORT_LowDriveStrength, kPORT_MuxAlt2,
+        kPORT_InputBufferEnable, kPORT_InputNormal, kPORT_UnlockRegister};
+    PORT_SetPinConfig(PORT4, 3U, &port4_3_config);
 }
 /***********************************************************************************************************************
  * EOF

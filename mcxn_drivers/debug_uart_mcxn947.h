@@ -64,6 +64,7 @@
 #define DEBUG_UART_FRAME_ID_TELEMETRY  0x01U  /* per-motor telemetry */
 #define DEBUG_UART_FRAME_ID_LOG        0x02U  /* free-form ASCII */
 #define DEBUG_UART_FRAME_ID_RC         0x03U  /* RC channel snapshot */
+#define DEBUG_UART_FRAME_ID_KALMAN_Z   0x04U  /* Kalman Z position + velocity */
 
 /*!
  * @brief Initialise LPUART4 in TX-only, non-blocking ring-buffer mode.

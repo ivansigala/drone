@@ -1,0 +1,201 @@
+/*
+    spi_driver_mcxn947.c
+    Author: Diego
+    Created on: 9, April 2026
+ */
+
+#include "spi_driver_mcxn947.h"
+
+/* FreeRTOS — needed for the DMA completion semaphore */
+#include "FreeRTOS.h"
+#include "semphr.h"
+
+
+static edma_handle_t g_lpspiRxEdmaHandles[FSL_FEATURE_SOC_LPSPI_COUNT];
+static edma_handle_t g_lpspiTxEdmaHandles[FSL_FEATURE_SOC_LPSPI_COUNT];
+static lpspi_master_handle_t g_spi_handles[FSL_FEATURE_SOC_LPSPI_COUNT];
+AT_NONCACHEABLE_SECTION_INIT( static lpspi_master_edma_handle_t g_spi_edma_handles[FSL_FEATURE_SOC_LPSPI_COUNT]) = {0};
+
+/*
+ * Internal DMA completion callback.
+ *
+ * Called from the eDMA IRQ handler when the LPSPI DMA transfer finishes.
+ * Gives the per-instance binary semaphore so that spi_master_transfer()
+ * can unblock the calling FreeRTOS task instead of busy-polling.
+ *
+ * userData is the SemaphoreHandle_t stored in spi_ctrl_t.dma_semaphore and
+ * installed as the userData argument in LPSPI_MasterTransferCreateHandleEDMA.
+ */
+static void spi_dma_complete_callback(LPSPI_Type *base,
+                                      lpspi_master_edma_handle_t *handle,
+                                      status_t completionStatus,
+                                      void *userData)
+{
+    (void)base;
+    (void)handle;
+    (void)completionStatus;
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR((SemaphoreHandle_t)userData, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+
+void spi_get_defaultconfig_imu(spi_ctrl_t *imu){
+
+    imu->spi_base = IMU_SPI_MASTER_BASEADDR;
+    imu->dma_base = IMU_SPI_MASTER_DMA_BASE;
+    imu->dma_rx_channel = IMU_SPI_MASTER_DMA_RX_CHANNEL;
+    imu->dma_tx_channel = IMU_SPI_MASTER_DMA_TX_CHANNEL;
+    imu->baudrate_u32   = IMU_SPI_TRANSFER_BAUDRATE;
+    imu->instance       = IMU_SPI_MASTER_INSTANCE;
+    imu->pcs_for_init   = IMU_SPI_MASTER_PCS_FOR_INIT;
+    imu->pcs_for_transfer = IMU_SPI_MASTER_PCS_FOR_TRANSFER;
+    imu->edma_rx_channel  = IMU_SPI_RECEIVE_EDMA_CHANNEL;
+    imu->edma_tx_channel  = IMU_SPI_TRANSMIT_EDMA_CHANNEL;
+    imu->cpol             = IMU_SPI_MASTER_CPOL;
+    imu->cpha             = IMU_SPI_MASTER_CPHA;
+    imu->source_clock     = IMU_SPI_MASTER_CLK_FREQ;
+    imu->enable_dma = true;
+
+}
+
+void spi_get_defaultconfig_bar(spi_ctrl_t *bar){
+
+    bar->spi_base = BME_SPI_MASTER_BASEADDR;
+    bar->dma_base = BME_SPI_MASTER_DMA_BASE;
+    bar->dma_rx_channel = BME_SPI_MASTER_DMA_RX_CHANNEL;
+    bar->dma_tx_channel = BME_SPI_MASTER_DMA_TX_CHANNEL;
+    bar->baudrate_u32   = BME_SPI_TRANSFER_BAUDRATE;
+    bar->instance       = BME_SPI_MASTER_INSTANCE;
+    bar->pcs_for_init   = BME_SPI_MASTER_PCS_FOR_INIT;
+    bar->pcs_for_transfer = BME_SPI_MASTER_PCS_FOR_TRANSFER;
+    bar->edma_rx_channel  = BME_SPI_RECEIVE_EDMA_CHANNEL;
+    bar->edma_tx_channel  = BME_SPI_TRANSMIT_EDMA_CHANNEL;
+    bar->cpol             = BME_SPI_MASTER_CPOL;
+    bar->cpha             = BME_SPI_MASTER_CPHA;
+    bar->source_clock     = BME_SPI_MASTER_CLK_FREQ;
+    bar->enable_dma = true;
+
+}
+
+void spi_get_defaultconfig_vlx(spi_ctrl_t *vlx){
+
+    vlx->spi_base         = VLX_SPI_MASTER_BASEADDR;
+    vlx->dma_base         = VLX_SPI_MASTER_DMA_BASE;
+    vlx->dma_rx_channel   = VLX_SPI_MASTER_DMA_RX_CHANNEL;
+    vlx->dma_tx_channel   = VLX_SPI_MASTER_DMA_TX_CHANNEL;
+    vlx->baudrate_u32     = VLX_SPI_TRANSFER_BAUDRATE;
+    vlx->instance         = VLX_SPI_MASTER_INSTANCE;
+    vlx->pcs_for_init     = VLX_SPI_MASTER_PCS_FOR_INIT;
+    vlx->pcs_for_transfer = VLX_SPI_MASTER_PCS_FOR_TRANSFER;
+    vlx->edma_rx_channel  = VLX_SPI_RECEIVE_EDMA_CHANNEL;
+    vlx->edma_tx_channel  = VLX_SPI_TRANSMIT_EDMA_CHANNEL;
+    vlx->cpol             = VLX_SPI_MASTER_CPOL;
+    vlx->cpha             = VLX_SPI_MASTER_CPHA;
+    vlx->source_clock     = VLX_SPI_MASTER_CLK_FREQ;
+    vlx->enable_dma       = true;
+
+}
+
+status_t spi_init(spi_ctrl_t *ctrl){
+
+    edma_config_t userConfig;
+    lpspi_master_config_t masterConfig;
+
+    LPSPI_MasterGetDefaultConfig(&masterConfig);
+    masterConfig.baudRate = ctrl->baudrate_u32;
+    masterConfig.whichPcs = ctrl->pcs_for_init;
+    masterConfig.cpol     = ctrl->cpol;
+    masterConfig.cpha     = ctrl->cpha;
+    masterConfig.pcsToSckDelayInNanoSec        = 1000000000U / (masterConfig.baudRate * 2U);
+    masterConfig.lastSckToPcsDelayInNanoSec    = 1000000000U / (masterConfig.baudRate * 2U);
+    masterConfig.betweenTransferDelayInNanoSec = 1000000000U / (masterConfig.baudRate * 2U);
+    
+    LPSPI_MasterInit(ctrl->spi_base, &masterConfig, ctrl->source_clock);
+
+    if(ctrl->enable_dma == false){
+        /* Blocking path — no DMA, no callback needed (pass NULL). */
+        LPSPI_MasterTransferCreateHandle(ctrl->spi_base, &(g_spi_handles[ctrl->instance]), NULL, NULL);
+        return kStatus_Success;
+    }
+
+    /* EDMA_Init resets the entire DMA controller — safe on the first call,
+     * destructive on the second (wipes channel MUX and handles already set up
+     * for a previous LPSPI instance).  A static guard ensures it runs once.   */
+    static bool edma_initialized = false;
+    if (!edma_initialized)
+    {
+        EDMA_GetDefaultConfig(&userConfig);
+        EDMA_Init(ctrl->dma_base, &userConfig);
+        edma_initialized = true;
+    }
+
+    /* Route the LPSPI RX and TX DMA request sources to the chosen eDMA channels.
+     * Without this the LPSPI peripheral cannot trigger a DMA transfer.
+     * NOTE: if your SDK spells this EDMA4_SetChannelMux, rename accordingly.   */
+    EDMA_SetChannelMux(ctrl->dma_base, ctrl->dma_rx_channel, ctrl->edma_rx_channel);
+    EDMA_SetChannelMux(ctrl->dma_base, ctrl->dma_tx_channel, ctrl->edma_tx_channel);
+
+    memset(&(g_lpspiRxEdmaHandles[ctrl->instance]), 0, sizeof(g_lpspiRxEdmaHandles[ctrl->instance]));
+    memset(&(g_lpspiTxEdmaHandles[ctrl->instance]), 0, sizeof(g_lpspiTxEdmaHandles[ctrl->instance]));
+
+    EDMA_CreateHandle(&(g_lpspiRxEdmaHandles[ctrl->instance]), ctrl->dma_base,
+                      ctrl->dma_rx_channel);
+    EDMA_CreateHandle(&(g_lpspiTxEdmaHandles[ctrl->instance]), ctrl->dma_base,
+                      ctrl->dma_tx_channel);
+
+    /* Create the binary semaphore used to signal completion from the DMA ISR.
+     * Must be created before the EDMA handle so userData is valid.            */
+    ctrl->dma_semaphore = xSemaphoreCreateBinary();
+    if (ctrl->dma_semaphore == NULL)
+    {
+        return kStatus_Fail;
+    }
+
+    /* Install the internal callback; pass the semaphore as userData so the
+     * ISR can give it without needing any global state.                        */
+    LPSPI_MasterTransferCreateHandleEDMA(ctrl->spi_base,
+                        &(g_spi_edma_handles[ctrl->instance]),
+                        spi_dma_complete_callback,
+                        ctrl->dma_semaphore,
+                        &(g_lpspiRxEdmaHandles[ctrl->instance]),
+                        &(g_lpspiTxEdmaHandles[ctrl->instance]));
+
+    
+    return kStatus_Success;
+
+}
+
+status_t spi_master_transfer(spi_ctrl_t *ctrl, uint8_t *txData, uint8_t *rxData, size_t dataSize){
+
+    lpspi_transfer_t masterXfer;
+
+
+    masterXfer.txData   = txData;
+    masterXfer.rxData   = rxData;
+    masterXfer.dataSize = dataSize;
+
+    masterXfer.configFlags = ctrl->pcs_for_transfer | kLPSPI_MasterByteSwap | kLPSPI_MasterPcsContinuous;
+
+    if(ctrl->enable_dma == false){
+        return LPSPI_MasterTransferBlocking(ctrl->spi_base, &masterXfer);
+    }
+
+    status_t status = LPSPI_MasterTransferEDMA(ctrl->spi_base,
+                                               &g_spi_edma_handles[ctrl->instance],
+                                               &masterXfer);
+    if (status != kStatus_Success)
+    {
+        return status;
+    }
+
+    if (xSemaphoreTake(ctrl->dma_semaphore, pdMS_TO_TICKS(100)) != pdTRUE)
+    {
+        /* Timeout — abort the transfer so the peripheral is left in a clean state */
+        LPSPI_MasterTransferAbortEDMA(ctrl->spi_base, &g_spi_edma_handles[ctrl->instance]);
+        return kStatus_Timeout;
+    }
+
+    return kStatus_Success;
+}

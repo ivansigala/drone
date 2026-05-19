@@ -49,6 +49,16 @@ void UART1_InitPins(void);
  */
 void UART7_InitPins(void);
 
+/*!
+ * @brief Configures LPSPI2 pins (BME280 barometer — PORT4[0..3]).
+ */
+void LPSPI2_InitPins(void);
+
+/*!
+ * @brief Configures LPSPI3 pins (BNO085 IMU — PORT1[12..15]).
+ */
+void LPSPI3_InitPins(void);
+
 
 #if defined(__cplusplus)
 }
